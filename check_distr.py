@@ -5,7 +5,7 @@ import awkward as ak
 import ROOT
 import yaml
 
-from utils import load_and_select_events, analyze_event, summarize_tracks
+from utils import load_and_select_events, analyze_event
 from geometry_utils import load_geometry
 
 
@@ -51,11 +51,11 @@ def make_multiplicity_th2(arrays, output_dir, base_name="multiplicity"):
 
     return h2
 
-
 def write_txt_dump(
     arrays, output_dir, base_name="cluster_details", x0_count=1, x0_m2_count=0
 ):
-    """Write event details to a text file for events matching given multiplicities.
+    """
+    Write event details to a text file for events matching given multiplicities.
 
     Only outputs tracks that satisfy:
     - hit_tr == True
@@ -63,11 +63,13 @@ def write_txt_dump(
     - if n_cls == 2, then missing_in_acc == False
 
     Dumps all available info for all selected tracks and their clusters.
-    Also prints a global summary of tracks before selection (in console and in the TXT file).
+    Also prints a global summary of tracks before selection (console and TXT file).
+    Adds intersection check for layer 1 for tracks with n_cls==3 and summarizes its fractions.
     """
 
     import awkward as ak
     import os
+    import math
     from utils import analyze_event
 
     # --------------------------
@@ -87,13 +89,17 @@ def write_txt_dump(
         )
         return
 
-    # ===============================
+    # --------------------------
     # Global summary counters (before filtering)
-    # ===============================
+    # --------------------------
     total_counts = {"n_cls_2": 0, "n_cls_3": 0, "n_cls_gt3": 0}
     hit_tr_counts = {"n_cls_2": 0, "n_cls_3": 0, "n_cls_gt3": 0}
-    missing_in_acc_counts = {"n_cls_2": 0}  # only for n_cls == 2
-    hit_and_not_missing_counts = {"n_cls_2": 0}  # hit_tr and missing_in_acc==False
+    missing_in_acc_counts = {"n_cls_2": 0}
+    hit_and_not_missing_counts = {"n_cls_2": 0}
+
+    # For n_cls==3: intersection counters
+    n_cls3_intersection_yes = 0
+    n_cls3_intersection_yes_and_hit = 0
 
     for evt in sel:
         track_list = analyze_event(evt)
@@ -110,30 +116,45 @@ def write_txt_dump(
                 total_counts["n_cls_3"] += 1
                 if trk.hit_tr:
                     hit_tr_counts["n_cls_3"] += 1
+
+                # Intersection check
+                if len(trk.clusters) == 3:
+                    clus0 = trk.clusters[0]
+                    clus1 = trk.clusters[1]
+                    clus2 = trk.clusters[2]
+                    x1 = 0.5 * (clus0.mean_x + clus2.mean_x)
+                    y1 = 0.5 * (clus0.mean_y + clus2.mean_y)
+                    dx = abs(clus1.mean_x - x1)
+                    dy = abs(clus1.mean_y - y1)
+                    intersection = math.hypot(dx, dy) < 0.5
+                    if intersection:
+                        n_cls3_intersection_yes += 1
+                        if trk.hit_tr:
+                            n_cls3_intersection_yes_and_hit += 1
+
             elif trk.n_cls > 3:
                 total_counts["n_cls_gt3"] += 1
                 if trk.hit_tr:
                     hit_tr_counts["n_cls_gt3"] += 1
 
-    # ===============================
+    # --------------------------
     # Prepare output text file
-    # ===============================
+    # --------------------------
     txt_path = os.path.join(output_dir, f"{base_name}.txt")
     with open(txt_path, "w") as f:
         f.write("# Event dump for selected events\n")
         f.write(f"# x0 multiplicity: {x0_count}, x0_m2 multiplicity: {x0_m2_count}\n")
         f.write(
-            "# Filters: hit_tr==True, n_cls<4, if n_cls==2 then missing_in_acc==False\n\n"
+            "# Filters: hit_tr==True, n_cls<4, if n_cls==2 then missing_in_acc==False\n"
+        )
+        f.write(
+            "# For n_cls==3, intersection_layer1 indicates if layer1 cluster intersects midpoint of layer0/2 clusters\n\n"
         )
 
         for evt_idx, evt in enumerate(sel):
-
-            # analyze_event returns a list of Track objects
             track_list = analyze_event(evt)
+            total_clusters_all = len(evt["L2Event/cls_mean_x"])
 
-            # --------------------------
-            # Apply selection for dump
-            # --------------------------
             selected_tracks = [
                 trk
                 for trk in track_list
@@ -144,33 +165,38 @@ def write_txt_dump(
             if len(selected_tracks) == 0:
                 continue
 
-            # Event header
             f.write(f"Event {evt_idx}\n")
             f.write(f"  n_tracks={len(selected_tracks)}\n")
+            f.write(f"  n_clusters_total={total_clusters_all}\n")
 
-            # Event-level Dsum = sum of all selected tracks’ D_sum
-            event_Dsum = sum(trk.D_sum for trk in selected_tracks)
-            f.write(f"  Event Dsum={event_Dsum:.5f}\n")
-
-            # Dump each track
             for trk in selected_tracks:
+                intersection_layer1 = "N/A"
+                if trk.n_cls == 3 and len(trk.clusters) == 3:
+                    clus0 = trk.clusters[0]
+                    clus1 = trk.clusters[1]
+                    clus2 = trk.clusters[2]
+                    x1 = 0.5 * (clus0.mean_x + clus2.mean_x)
+                    y1 = 0.5 * (clus0.mean_y + clus2.mean_y)
+                    dx = abs(clus1.mean_x - x1)
+                    dy = abs(clus1.mean_y - y1)
+                    intersection_layer1 = "Yes" if math.hypot(dx, dy) < 0.5 else "No"
+
                 f.write(
                     f"  Track {trk.track_idx}: "
                     f"x0={trk.x0:.5f}, y0={trk.y0:.5f}, theta={trk.theta:.5f}, phi={trk.phi:.5f}, "
                     f"n_cls={trk.n_cls}, hit_tr={int(trk.hit_tr)}, missing_in_acc={int(trk.missing_in_acc)}, "
-                    f"D_sum={trk.D_sum:.5f}\n"
+                    f"D_sum={trk.D_sum:.5f}, intersection_layer1={intersection_layer1}\n"
                 )
 
-                # Dump all clusters inside this track
                 for i, c in enumerate(trk.clusters):
                     attrs = ", ".join(f"{k}={getattr(c, k)}" for k in vars(c))
                     f.write(f"    Cluster {i}: {attrs}\n")
 
             f.write("\n")
 
-        # ===============================
-        # Write global summary at the end
-        # ===============================
+        # --------------------------
+        # Global summary
+        # --------------------------
         f.write("===== Global Track Summary (before filtering) =====\n")
         for key in ["n_cls_3", "n_cls_2", "n_cls_gt3"]:
             tot = total_counts.get(key, 0)
@@ -186,12 +212,20 @@ def write_txt_dump(
                     f"missing_in_acc=False={missing} ({frac_missing:.1f}%), "
                     f"hit_tr and missing_in_acc=False={both} ({frac_both:.1f}%)\n"
                 )
+            elif key == "n_cls_3":
+                frac_intersection = n_cls3_intersection_yes / tot * 100 if tot else 0
+                frac_intersection_hit = n_cls3_intersection_yes_and_hit / tot * 100 if tot else 0
+                f.write(
+                    f"{key}: total={tot}, hit_tr={hits} ({frac_hits:.1f}%), "
+                    f"intersection_layer1=Yes: {n_cls3_intersection_yes} ({frac_intersection:.1f}%), "
+                    f"hit_tr AND intersection_layer1=Yes: {n_cls3_intersection_yes_and_hit} ({frac_intersection_hit:.1f}%)\n"
+                )
             else:
                 f.write(f"{key}: total={tot}, hit_tr={hits} ({frac_hits:.1f}%)\n")
 
-    # ===============================
+    # --------------------------
     # Print same summary in console
-    # ===============================
+    # --------------------------
     print("\n===== Global Track Summary (before filtering) =====")
     for key in ["n_cls_3", "n_cls_2", "n_cls_gt3"]:
         tot = total_counts.get(key, 0)
@@ -203,12 +237,20 @@ def write_txt_dump(
             both = hit_and_not_missing_counts.get(key, 0)
             frac_both = both / tot * 100 if tot else 0
             print(
-                f"{key}: total={tot}, hit_tr={hits} ({frac_hits:.1f}%), "
-                f"missing_in_acc=False={missing} ({frac_missing:.1f}%), "
-                f"hit_tr and missing_in_acc=False={both} ({frac_both:.1f}%)"
+                f"{key}: total={tot}, hit_tr: {hits} ({frac_hits:.1f}%), "
+                f"missing_in_acceptance=False: {missing} ({frac_missing:.1f}%), "
+                f"hit_tr and missing_in_acceptace=False: {both} ({frac_both:.1f}%)"
+            )
+        elif key == "n_cls_3":
+            frac_intersection = n_cls3_intersection_yes / tot * 100 if tot else 0
+            frac_intersection_hit = n_cls3_intersection_yes_and_hit / tot * 100 if tot else 0
+            print(
+                f"{key}: total={tot}, hit_tr: {hits} ({frac_hits:.1f}%), "
+                f"intersection_layer1=Yes: {n_cls3_intersection_yes} ({frac_intersection:.1f}%), "
+                f"hit_tr AND intersection_layer1=Yes: {n_cls3_intersection_yes_and_hit} ({frac_intersection_hit:.1f}%)"
             )
         else:
-            print(f"{key}: total={tot}, hit_tr={hits} ({frac_hits:.1f}%)")
+            print(f"{key}: total: {tot}, hit_tr: {hits} ({frac_hits:.1f}%)")
 
     print(f"Saved event dump to {txt_path}")
 
