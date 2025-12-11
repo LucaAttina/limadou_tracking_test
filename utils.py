@@ -440,3 +440,25 @@ def analyze_event(evt):
         track_list.append(track_obj)
 
     return track_list
+
+# Track counts and selections
+def summarize_tracks(tracks, n_cls_val):
+    n_total = len(tracks)
+    n_hit_tr = sum(trk.hit_tr for trk in tracks)
+    if n_cls_val == 2:
+        n_missing_ok = sum(not trk.missing_in_acc for trk in tracks)
+    else:
+        n_missing_ok = "N/A"
+
+    # Selected tracks: hit_tr and missing_in_acc == False for n_cls==2
+    selected = [
+        trk
+        for trk in tracks
+        if trk.hit_tr and (trk.n_cls != 2 or not trk.missing_in_acc)
+    ]
+    n_selected = len(selected)
+    frac_selected = n_selected / n_total if n_total > 0 else 0
+
+    print(f"Tracks with n_cls={n_cls_val}: total={n_total}, hit_tr={n_hit_tr}, "
+          f"missing_ok={n_missing_ok}, selected={n_selected} ({frac_selected:.2%})")
+    return selected

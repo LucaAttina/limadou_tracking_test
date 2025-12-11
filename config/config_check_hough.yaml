@@ -1,0 +1,7 @@
+input: "/data/lbariogl/limadou/simulations/new/MC_6_LVL2_SKIM.root"
+output_dir: "../test/output/comp"
+mask_trig: False
+mask_trig_count: False
+apply_multiplicity: True
+x0_count: 1
+x0_m2_count: 0
