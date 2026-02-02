@@ -15,6 +15,7 @@ def track_hit_TR(x1, y1, theta, phi, hits_TR1andTR2=True):
     if not hits_TR1andTR2:
         return True
 
+
     G = ROOT.Geometry
 
     xTR1t = x1 - (G.StaveZ[1] - G.TR1Thickness / 2) * math.tan(theta) * math.cos(phi)
@@ -120,6 +121,28 @@ def is_in_acceptance(x, y):
             (y < G.ChipSizeY * 1 + G.ChipStaveDistanceY * 0 + G.ChipDistanceY * 0.5)
             and (y > G.ChipSizeY * 0 + G.ChipStaveDistanceY * 0 + G.ChipDistanceY * 0.5)
         )
+
+        # Mirror for negative Y - new
+        or (
+            (y > -(G.ChipSizeY * 1 + G.ChipStaveDistanceY * 0 + G.ChipDistanceY * 0.5))
+            and (y < -(G.ChipSizeY * 0 + G.ChipStaveDistanceY * 0 + G.ChipDistanceY * 0.5))
+        )
+        or (
+            (y > -(G.ChipSizeY * 2 + G.ChipStaveDistanceY * 1 + G.ChipDistanceY * 0.5))
+            and (y < -(G.ChipSizeY * 1 + G.ChipStaveDistanceY * 1 + G.ChipDistanceY * 0.5))
+        )
+        or (
+            (y > -(G.ChipSizeY * 3 + G.ChipStaveDistanceY * 1 + G.ChipDistanceY * 1.5))
+            and (y < -(G.ChipSizeY * 2 + G.ChipStaveDistanceY * 1 + G.ChipDistanceY * 1.5))
+        )
+        or(
+            (y > -(G.ChipSizeY * 4 + G.ChipStaveDistanceY * 2 + G.ChipDistanceY * 1.5))
+            and (y < -(G.ChipSizeY * 3 + G.ChipStaveDistanceY * 2 + G.ChipDistanceY * 1.5))
+        )
+        or (
+            (y > -(G.ChipSizeY * 5 + G.ChipStaveDistanceY * 2 + G.ChipDistanceY * 2.5))
+            and (y < -(G.ChipSizeY * 4 + G.ChipStaveDistanceY * 2 + G.ChipDistanceY * 2.5))
+        )
     )
 
     return insideX and insideY
@@ -145,17 +168,20 @@ def handle_two_cluster_track(cls_structs, theta, phi, dist_z):
         return None
 
     if missing_layer == 0:
-        x_miss = cls_structs[1]["mean_x"] - dist_z * math.tan(theta) * math.cos(phi)
-        y_miss = cls_structs[1]["mean_y"] - dist_z * math.tan(theta) * math.sin(phi)
+        x_miss = cls_structs[0]["mean_x"] - dist_z * math.tan(theta) * math.cos(phi)
+        y_miss = cls_structs[0]["mean_y"] - dist_z * math.tan(theta) * math.sin(phi)
+        hit_tr = track_hit_TR(cls_structs[0]["mean_x"], cls_structs[0]["mean_y"], theta, phi)
     elif missing_layer == 1:
         x_miss = cls_structs[0]["mean_x"] + dist_z * math.tan(theta) * math.cos(phi)
         y_miss = cls_structs[0]["mean_y"] + dist_z * math.tan(theta) * math.sin(phi)
+        hit_tr = track_hit_TR(x_miss, y_miss, theta, phi)
     else:
         x_miss = cls_structs[0]["mean_x"] + 2 * dist_z * math.tan(theta) * math.cos(phi)
         y_miss = cls_structs[0]["mean_y"] + 2 * dist_z * math.tan(theta) * math.sin(phi)
+        hit_tr = track_hit_TR(cls_structs[1]["mean_x"], cls_structs[1]["mean_y"], theta, phi)
 
     in_acc = is_in_acceptance(x_miss, y_miss)
-    hit_tr = track_hit_TR(x_miss, y_miss, theta, phi)
+    #hit_tr = track_hit_TR(x_miss, y_miss, theta, phi)
 
     return {
         "missing_layer": missing_layer,

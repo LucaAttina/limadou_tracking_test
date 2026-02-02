@@ -4,11 +4,12 @@ import numpy as np
 import awkward as ak
 import ROOT
 import yaml
+import math
 
 from utils import load_and_select_events, analyze_event
 from geometry_utils import load_geometry
 
-
+'''
 def make_multiplicity_th2(arrays, output_dir, base_name="multiplicity"):
     # compute multiplicities per event
     x0_mult = ak.num(arrays["L2Event/x0"])
@@ -50,7 +51,8 @@ def make_multiplicity_th2(arrays, output_dir, base_name="multiplicity"):
     print(f"Saved multiplicity TH2 to {out_root} and {pdf_path}")
 
     return h2
-
+    '''
+'''
 def write_txt_dump(
     arrays, output_dir, base_name="cluster_details", x0_count=1, x0_m2_count=0
 ):
@@ -67,11 +69,6 @@ def write_txt_dump(
     Adds intersection check for layer 1 for tracks with n_cls==3 and summarizes its fractions.
     """
 
-    import awkward as ak
-    import os
-    import math
-    from utils import analyze_event
-
     # --------------------------
     # Select events matching multiplicities
     # --------------------------
@@ -79,7 +76,7 @@ def write_txt_dump(
     x0_m2_mult = ak.num(arrays["L2Event/x0_m2"])
 
     sel_mask = (x0_mult == x0_count) & (x0_m2_mult == x0_m2_count)
-    nevt = int(ak.sum(sel_mask))
+    nevt = int(ak.sum(sel_mask)) #number of events matching x0_mult = 1 and x0_m2_mult = 0
     print(f"Events for dump (x0=={x0_count}, x0_m2=={x0_m2_count}): {nevt}")
 
     sel = arrays[sel_mask]
@@ -104,7 +101,7 @@ def write_txt_dump(
     for evt in sel:
         track_list = analyze_event(evt)
         for trk in track_list:
-            if trk.n_cls == 2:
+            if trk.n_cls == 2: # check for 2-cluster tracks
                 total_counts["n_cls_2"] += 1
                 if trk.hit_tr:
                     hit_tr_counts["n_cls_2"] += 1
@@ -112,7 +109,7 @@ def write_txt_dump(
                     missing_in_acc_counts["n_cls_2"] += 1
                 if trk.hit_tr and not trk.missing_in_acc:
                     hit_and_not_missing_counts["n_cls_2"] += 1
-            elif trk.n_cls == 3:
+            elif trk.n_cls == 3: # check for 3-cluster tracks
                 total_counts["n_cls_3"] += 1
                 if trk.hit_tr:
                     hit_tr_counts["n_cls_3"] += 1
@@ -126,7 +123,7 @@ def write_txt_dump(
                     y1 = 0.5 * (clus0.mean_y + clus2.mean_y)
                     dx = abs(clus1.mean_x - x1)
                     dy = abs(clus1.mean_y - y1)
-                    intersection = math.hypot(dx, dy) < 0.5
+                    intersection = math.hypot(dx, dy) < 0.5 # distance between layer1 cluster and midpoint of layer0/2 clusters
                     if intersection:
                         n_cls3_intersection_yes += 1
                         if trk.hit_tr:
@@ -155,7 +152,7 @@ def write_txt_dump(
             track_list = analyze_event(evt)
             total_clusters_all = len(evt["L2Event/cls_mean_x"])
 
-            selected_tracks = [
+            selected_tracks = [ # choose tracks satisfying the conditions
                 trk
                 for trk in track_list
                 if trk.hit_tr
@@ -253,8 +250,8 @@ def write_txt_dump(
             print(f"{key}: total: {tot}, hit_tr: {hits} ({frac_hits:.1f}%)")
 
     print(f"Saved event dump to {txt_path}")
-
-
+'''
+'''
 def compare_angle_distributions(
     arrays, output_dir, base_name="angle_compare", x0_count=1, x0_m2_count=1
 ):
@@ -302,8 +299,6 @@ def compare_angle_distributions(
             mn -= 0.001
             mx += 0.001
         return ROOT.TH1F(name, name, nbins, mn, mx)
-
-    import math
 
     # build histograms using combined ranges so overlays match
     h_theta = auto_hist("h_theta", np.concatenate([theta, theta_m2]))
@@ -370,8 +365,68 @@ def compare_angle_distributions(
         "h_phi": h_phi,
         "h_phi_m2": h_phi_m2,
     }
+'''
 
+def cluster_per_event(
+    arrays, output_dir, base_name="cluster_multiplicity"
+):
+    """Get cluster_x0 array for selected events and calculate cluster_multiplicities.
 
+    Parameters:
+      - arrays: awkward arrays returned by load_and_select_events (may already be filtered)
+    """
+    # Number of selected events
+    nsel = len(arrays)
+
+    if nsel == 0:
+        print(f"No selected events found. Skipping cluster distribution.")
+        return {}
+    
+    # per event cluster_multiplicities 
+    cluster_multiplicities = ak.to_numpy(ak.num(arrays["L2Event/cls_size"]))
+
+    # Create and fill multiplicity histogram
+    cClsMult = ROOT.TCanvas("cClsMult", "cClsMult", 900, 700)
+    h_cls_mult = ROOT.TH1F(
+        "h_cls_mult",
+        "; Clusters per event; Entries",
+        max(cluster_multiplicities) - min(cluster_multiplicities) + 1,
+        min(cluster_multiplicities) - 0.5,
+        max(cluster_multiplicities) + 0.5,
+    )
+    for mult in cluster_multiplicities:
+        h_cls_mult.Fill(mult)
+
+    # Print statistics
+    print(f"Cluster multiplicity stats:")
+    print(f"  Mean: {np.mean(cluster_multiplicities):.2f}")
+    print(f"  Std Dev: {np.std(cluster_multiplicities):.2f}")
+    print(f"  Min: {min(cluster_multiplicities)}")
+    print(f"  Max: {max(cluster_multiplicities)}")
+
+    cClsMult.cd()
+    h_cls_mult.Draw("HIST")
+    pave_cls = ROOT.TPaveText(0.65, 0.80, 0.88, 0.88, "brNDC")
+    pave_cls.AddText(f"Selected events: {nsel}")
+    n_zero_clusters = np.sum(cluster_multiplicities == 0)
+    pave_cls.AddText(f"Events with no clusters: {n_zero_clusters}")
+    pave_cls.SetFillColor(0)
+    pave_cls.Draw()
+
+    # Save
+    out_root = os.path.join(output_dir, f"{base_name}.root")
+    f = ROOT.TFile(out_root, "RECREATE")
+    h_cls_mult.Write()
+    f.Close()
+
+    # Save a canvas as PDF
+    pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+    cClsMult.SaveAs(pdf_path)
+    print(f"Saved cluster multiplicity histogram to {out_root} and {pdf_path}")
+
+    return h_cls_mult
+
+'''
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Create multiplicity TH2 and compare angles for selected events"
@@ -417,6 +472,21 @@ if __name__ == "__main__":
         action="store_true",
         default=None,
         help="Apply multiplicity masks inside load_and_select_events (overrides config)",
+    )
+    parser.add_argument(
+        "--multi-th2",
+        action="store_true",
+        help="Create multiplicity TH2 x0 vs x0_m2",
+    )
+    parser.add_argument(
+        "--compare-angles",
+        action="store_true",
+        help="Compare angle distributions for selected events",
+    )
+    parser.add_argument(
+        "--cls-per-event",
+        action="store_true",
+        help="Get cluster multiplicity per event histogram",
     )
     args = parser.parse_args()
 
@@ -495,9 +565,12 @@ if __name__ == "__main__":
     suffix = f"_x0_{x0_count}_x0m2_{x0_m2_count}"
 
     # Build multiplicity TH2 (for the selected events)
-    h2 = make_multiplicity_th2(
-        arrays, output_dir, base_name="multiplicity_selected" + suffix
-    )
+    if args.multi_th2:
+        h2 = make_multiplicity_th2(
+            arrays, 
+            output_dir, 
+            base_name="multiplicity_selected" + suffix
+        )
 
     # Write cluster details for events matching the multiplicities
     write_txt_dump(
@@ -507,3 +580,23 @@ if __name__ == "__main__":
         x0_count=x0_count,
         x0_m2_count=x0_m2_count,
     )
+
+    # Compare angle distributions for the selected events
+    if args.compare_angles:
+        compare_angle_distributions(
+            arrays, 
+            output_dir, 
+            base_name="angle_compare" + suffix, 
+            x0_count=x0_count, 
+            x0_m2_count=x0_m2_count
+        )
+
+"""
+    if args.cls_per_event:
+        cluster_per_event(
+            arrays,
+            output_dir,
+            base_name="cluster_multiplicity" + suffix
+        )
+"""
+'''
