@@ -16,7 +16,7 @@ from geometry_utils import (
 
 ROOT.gStyle.SetOptStat(0)
 
-from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters
+from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks
 
 # ============================================================
 # Text output and histogram filling (single method)
@@ -630,6 +630,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         for i, rslt in enumerate(results):
             for tr in rslt["m1"]:
                 tr.event = i # add event index to track object
+            remove_duplicate_tracks(rslt["m1"], event_idx=i)
             all_tracks_m1.extend(rslt["m1"])
 
 
@@ -655,7 +656,8 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         for i, rslt in enumerate(results):
             for tr in rslt["m2"]:
                 tr.event = i # add event index to track object
-            all_tracks_m2.extend(rslt["m2"])
+            remove_duplicate_tracks(rslt["m2"], event_idx=i)
+            all_tracks_m2.extend(rslt["m2"])          
 
     if method == "both":
         compare_txt(

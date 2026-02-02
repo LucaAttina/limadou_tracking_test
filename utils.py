@@ -721,3 +721,38 @@ def check_event_tree(
     print(f"\nGood events matching multiplicities: m1 = {mask1.sum()}, m2 = {mask2.sum()}")
 
     return x0_sel, x0_m2_sel, mask1, mask2, tree1, tree2
+
+
+def remove_duplicate_tracks(tracks, event_idx = None):
+    """
+    Check for duplicate tracks.
+    Two tracks are considered duplicates if they:
+      - are built from the same set of clusters (trk.clusters)
+      - have the same fitted parameters (x0, y0, theta, phi).
+    Only the first occurrence is kept.
+    """
+    seen = {} # track position (not track index)
+    duplicate_indices = []
+
+    for idx, tr in enumerate(tracks):
+        clusters_key = tuple(sorted(c.cluster_idx for c in tr.clusters)) # sort clusters
+        params_key = (tr.x0, tr.y0, tr.theta, tr.phi)
+        key = (clusters_key, params_key) # key is clusters + parameters
+
+        if key in seen:
+            # duplicate track found
+            duplicate_indices.append(idx)
+            orig_idx = tracks[seen[key]].track_idx
+            print(
+                f"⚠️ Event {event_idx}: Duplicate track trk_idx={tr.track_idx} "
+                f"(duplicates trk_idx={orig_idx})"
+            )
+        else:
+            seen[key] = idx
+    # remove clones and return list w/o duplicates
+    for idx in sorted(duplicate_indices, reverse=True):
+        removed_trk_idx = tracks[idx].track_idx
+        del tracks[idx]
+        print(f"🗑️ Rimosso trk_idx={removed_trk_idx} duplicato")
+
+    return tracks
