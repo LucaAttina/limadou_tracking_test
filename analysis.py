@@ -185,7 +185,7 @@ def make_multiplicity_th2(arrays, output_dir, base_name="multiplicity"):
     return h2
 '''
 
-'''
+
 # ===================================
 # Write text dump
 # ===================================
@@ -208,19 +208,30 @@ def write_txt_dump(
     # --------------------------
     # Select events matching multiplicities
     # --------------------------
-    x0_mult = ak.num(arrays["L2Event/x0"])
-    x0_m2_mult = ak.num(arrays["L2Event/x0_m2"])
+    # select events where x0 multiplicity == x0_count and x0_m2 multiplicity == x0_m2_count
+    if x0_count is not None and x0_m2_count is not None:
+        x0_mult = ak.num(arrays["L2Event/x0"])
+        x0_m2_mult = ak.num(arrays["L2Event/x0_m2"])
+        sel_mask = (x0_mult == x0_count) & (x0_m2_mult == x0_m2_count)
+        sel = arrays[sel_mask]
+        nevt = int(ak.sum(sel_mask))
+        print(f"Events for dump (x0=={x0_count}, x0_m2=={x0_m2_count}): {nevt}")
+    # use all events in arrays if no multiplicity requirements provided
+    else:
+        sel = arrays
+        nevt = len(sel)
+        print(f"Events for dump: {nevt}")
 
-    sel_mask = (x0_mult == x0_count) & (x0_m2_mult == x0_m2_count)
-    nevt = int(ak.sum(sel_mask)) #number of events matching x0_mult = 1 and x0_m2_mult = 0
-    print(f"Events for dump (x0=={x0_count}, x0_m2=={x0_m2_count}): {nevt}")
-
-    sel = arrays[sel_mask]
+    
     if len(sel) == 0:
         print(
-            f"No events matching x0=={x0_count} && x0_m2=={x0_m2_count}. Skipping dump."
+            f"No events matching x0=={x0_count} && x0_m2=={x0_m2_count}. Skipping comparisons."
         )
-        return
+        return 
+    
+    if nevt == 0:
+        print("⚠️ No events. Skipping.")
+        return 
 
     # --------------------------
     # Global summary counters (before filtering)
@@ -386,7 +397,7 @@ def write_txt_dump(
             print(f"{key}: total: {tot}, hit_tr: {hits} ({frac_hits:.1f}%)")
 
     print(f"Saved event dump to {txt_path}")
-'''
+
 
 # ==================================
 # Theta, Phi, X0 and Y0 comparison
@@ -410,11 +421,13 @@ def compare_params_distributions(
         sel_mask = (x0_mult == x0_count) & (x0_m2_mult == x0_m2_count)
         sel = arrays[sel_mask]
         nevt = int(ak.sum(sel_mask))
-        print(f"Events with x0=={x0_count} and x0_m2=={x0_m2_count}: {nevt}")
+        print(f"=== PARAMETERS COMPARISON ===\nEvents with x0=={x0_count} and x0_m2=={x0_m2_count}: {nevt}")
         # use all events in arrays if no multiplicity requirements provided
     else:
         sel = arrays
         nevt = len(sel)
+        print(f"=== PARAMETERS COMPARISON ===\nTotal events: {nevt}")
+
     
     if len(sel) == 0:
         print(
@@ -474,10 +487,12 @@ def compare_params_distributions(
         h1.Draw("HIST")
         h2.Draw("HIST SAME")
 
-        leg = ROOT.TLegend(0.65, 0.75, 0.88, 0.88)
+        leg = ROOT.TLegend(0.75, 0.85, 0.88, 0.88)
         leg.AddEntry(h1, b1, "l")
         leg.AddEntry(h2, b2, "l")
-        leg.SetBorderSize(0)
+        leg.AddEntry(h1, f"Entries: {h1.GetEntries()}", "")
+        leg.AddEntry(h2, f"Entries: {h2.GetEntries()}", "")
+        leg.SetBorderSize(0.1)
         leg.Draw()
 
         c.Print(pdf_path)
@@ -605,19 +620,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--input-dir", 
-        help="Input directory (overrides config)", 
-        required=True,
+        help="Process all ROOT files in this input directory", 
         default=None
     )
+    '''
     parser.add_argument(
         "--all",
         action="store_true",
         help="Process all ROOT files in the input directory",
-    )
+    )'''
     parser.add_argument(
-        "--file", 
-        type=str, 
-        help="Process a single ROOT file in the input directory (insert filename)", 
+        "--input-file", 
+        #type=str, 
+        help="Process a single ROOT file (provide path/filename)", 
     )
 
     # Output directory
@@ -691,23 +706,26 @@ if __name__ == "__main__":
     def cfg_get(key, default=None):
         return cfg.get(key, default)
     
-    if args.input_dir is None:
-        print("⚠️ Please specify an input directory via --input-dir.")
+
+    '''if args.input_dir is None:
+        print("⚠️ Please specify an input via --input-dir.")
         sys.exit(1)
-    input_dir = args.input_dir
+    input_dir = args.input_dir'''
 
     # Determine final values (CLI overrides config)
     '''input_directory = args.file if args.file is not None #else cfg_get("input_dir")
     if input_directory is None:
         parser.error("Input file must be specified via --file or in the config file")'''
 
-    if args.all and args.file:
-        print("⚠️ Please specify only one option: either --all or --file.")
+    if args.input_dir and args.input_file:
+        print("⚠️ Please specify only one option: either --input-dir or --input-file.")
         sys.exit(1)
 
-    if not args.all and not args.file:
-        print("❗ Please specify an option: --all or --file")
+    if not args.input_dir and not args.input_file:
+        print("❗ Please specify an option: --input-dir or --input-file")
         sys.exit(1)
+
+    input_path = args.input_dir if args.input_dir else args.input_file
 
 
     # =========================
@@ -715,16 +733,15 @@ if __name__ == "__main__":
     # =========================
 
     # if --all is chosen, add all ROOT files in root_files
-    if args.all:
-        root_files = glob.glob(os.path.join(input_dir, "MC*.root"))
+    if args.input_dir:
+        root_files = glob.glob(os.path.join(input_path, "MC*.root"))
         if not root_files:
-            raise FileNotFoundError(f"No ROOT files found in: {input_dir}")
+            raise FileNotFoundError(f"No ROOT files found in: {input_path}")
     # if --file is chosen, process that single file
     else:
-        root_file = os.path.join(input_dir, args.file)
-        if not os.path.exists(root_file):
-            raise FileNotFoundError(f"File not found: {root_file}")
-        root_files = [root_file]
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"File not found: {input_path}")
+        root_files = [input_path]
 
     print(f"Found {len(root_files)} ROOT files to process")
 
@@ -788,7 +805,7 @@ if __name__ == "__main__":
     for root_file in root_files:
         arrays_tmp, counters = load_and_select_events(
             root_file, 
-            masks_to_apply={"trig": False, "trig_count": False, "x0_multiplicity": False, "x0_m2_multiplicity": False},
+            masks_to_apply=masks,
             multiplicity_config=multiplicity_config
         )
         arrays_list.append(arrays_tmp)
@@ -810,7 +827,7 @@ if __name__ == "__main__":
             output_dir, 
             base_name="multiplicity_selected" + suffix
         )
-
+    '''
     # Write cluster details for events matching the multiplicities
     write_txt_dump(
         arrays,
@@ -819,7 +836,7 @@ if __name__ == "__main__":
         x0_count=x0_count,
         x0_m2_count=x0_m2_count,
     )
-    '''
+    
 
     # Compare angle distributions for the selected events
     if args.compare_params:
@@ -840,3 +857,166 @@ if __name__ == "__main__":
             input_file_name,
             out_file,
         )'''
+    
+
+
+
+'''
+def compare_track_multiplicity(input_dir, output_dir):
+    """Compare track multiplicity histograms across ROOT files."""
+    print(f"🔍 Input directory: {input_dir}")
+    print(f"📤 Output directory: {output_dir}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    os.chdir(input_dir)
+
+    ROOT.gStyle.SetOptStat(0)
+    ROOT.gStyle.SetPalette(ROOT.kBird)
+
+    # Find input files
+    files = glob.glob("*_R*d*_distributions.root")
+    if not files:
+        print("❌ Error: No files found matching '*_R*d*_distributions.root'")
+        print("Current directory:", os.getcwd())
+        return
+
+    print(f"✅ Found {len(files)} files:")
+    for f in files:
+        print(f"  - {f}")
+
+    palette = ROOT.TColor.GetPalette()
+    palette_size = palette.GetSize()
+
+    # Output ROOT file
+    out_file_path = os.path.join(output_dir, "track_multiplicity_comparison.root")
+    out_file = ROOT.TFile(out_file_path, "RECREATE")
+
+    # === 1. MULTIPLICITY COMPARISON ===
+    cMultComp = ROOT.TCanvas("cMultComp", "cMultComp", 800, 600)
+    cMultComp.SetLogy()
+
+    frame = cMultComp.DrawFrame(-0.5, 0.1, 20.5, 1e5)
+    frame.SetTitle(";Track multiplicity;Entries")
+
+    legend = ROOT.TLegend(0.44, 0.65, 0.86, 0.81)
+    legend.SetNColumns(3)
+
+    # Reference histogram
+    first_file = ROOT.TFile(files[0], "READ")
+    h_trk_mult = first_file.Get("h_trk_mult")
+    if not h_trk_mult:
+        print(f"❌ Error: histogram 'h_trk_mult' not found in {files[0]}")
+        sys.exit(1)
+    h_trk_mult.SetDirectory(0)
+    h_trk_mult.SetLineColor(ROOT.kRed)
+    h_trk_mult.SetLineWidth(2)
+    h_trk_mult.Draw("SAME")
+    legend.AddEntry(h_trk_mult, "Hough", "l")
+
+    # Loop over all histograms
+    hist_info = []
+    for fname in files:
+        f = ROOT.TFile(fname, "READ")
+        h = f.Get("h_trk_mult_m2")
+        if not h:
+            print(f"⚠️ Warning: histogram 'h_trk_mult_m2' not found in {fname}")
+            f.Close()
+            continue
+
+        h.SetDirectory(0)
+        match = re.search(r"R(\d+)d(\d+)", fname)
+        if not match:
+            print(f"⚠️ Warning: could not parse region/detector from filename {fname}")
+            continue
+        r, d = map(int, match.groups())
+        hist_info.append({"hist": h, "r": r, "d": d, "value": float(f"{r}.{d}")})
+        f.Close()
+
+    hist_info.sort(key=lambda x: x["value"])
+
+    for i, info in enumerate(hist_info):
+        h = info["hist"]
+        r, d = info["r"], info["d"]
+        h.SetName(f"h_trk_mult_m2_R{r}d{d}")
+        color_index = palette[int(i * (palette_size - 1) / (len(hist_info) - 1))]
+        h.SetLineColor(color_index)
+        h.SetLineWidth(2)
+        h.SetMarkerColor(color_index)
+        h.Draw("SAME")
+        legend.AddEntry(h, f"R = {r}.{d} mm", "l")
+        out_file.cd()
+        h.Write()
+
+    legend.Draw()
+
+    pdf_path = os.path.join(output_dir, "track_multiplicity_comparison.pdf")
+    cMultComp.SaveAs(pdf_path)
+    out_file.cd()
+    cMultComp.Write("canvas")
+    h_trk_mult.Write()
+    print(f"✅ Saved track multiplicity comparison: {pdf_path}")
+
+    # === 2. INTEGRAL COMPARISON ===
+    cIntComp = ROOT.TCanvas("cIntComp", "cIntComp", 800, 600)
+    out_file.cd()
+
+    h_int = ROOT.TH1F(
+        "h_int", "Integral comparison;Number of tracks;Number of events", 5, 0.5, 5.5
+    )
+    h_int.SetDirectory(out_file)
+    h_int.SetStats(0)
+
+    ranges = [(2, 2), (2, 3), (2, 4), (2, 5), (2, 6)]
+    labels = ["1 track", "1-2 tracks", "1-3 tracks", "1-4 tracks", "1-5 tracks"]
+
+    for i, (low, high) in enumerate(ranges, 1):
+        h_int.SetBinContent(i, h_trk_mult.Integral(low, high))
+
+    h_int.SetLineColor(ROOT.kRed)
+    h_int.SetLineWidth(2)
+    h_int.Draw()
+
+    legend_int = ROOT.TLegend(0.39, 0.65, 0.86, 0.81)
+    legend_int.SetNColumns(3)
+    legend_int.AddEntry(h_int, "Hough", "l")
+
+    integral_histos = []
+    for i, info in enumerate(hist_info):
+        h = info["hist"]
+        r, d = info["r"], info["d"]
+        h_int_rd = ROOT.TH1F(
+            f"h_int_R{r}d{d}",
+            h_int.GetTitle(),
+            h_int.GetNbinsX(),
+            h_int.GetXaxis().GetXmin(),
+            h_int.GetXaxis().GetXmax(),
+        )
+        h_int_rd.SetDirectory(out_file)
+
+        for j, (low, high) in enumerate(ranges, 1):
+            h_int_rd.SetBinContent(j, h.Integral(low, high))
+
+        color_index = palette[int(i * (palette_size - 1) / (len(hist_info) - 1))]
+        h_int_rd.SetLineColor(color_index)
+        h_int_rd.SetLineWidth(2)
+        h_int_rd.Draw("SAME")
+        legend_int.AddEntry(h_int_rd, f"R = {r}.{d} mm", "l")
+        integral_histos.append(h_int_rd)
+
+    for i, label in enumerate(labels, 1):
+        h_int.GetXaxis().SetBinLabel(i, label)
+    h_int.GetYaxis().SetRangeUser(0.0, h_int.GetMaximum() * 1.1)
+    legend_int.Draw()
+
+    pdf_int_path = os.path.join(
+        output_dir, "track_multiplicity_integral_comparison.pdf"
+    )
+    cIntComp.SaveAs(pdf_int_path)
+    out_file.cd()
+    cIntComp.Write("canvas_integral")
+    print(f"✅ Saved integral comparison: {pdf_int_path}")
+
+    integral_histos.clear()
+    out_file.Close()
+    print(f"🏁 Output ROOT file saved in: {out_file_path}")
+    '''

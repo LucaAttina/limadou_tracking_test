@@ -8,8 +8,8 @@ import argparse
 import awkward as ak
 
 # === CONFIGURAZIONE ===
-input_directory = "/home/lbariogl/limadou/test/data/"  # Directory containing ROOT files
-output_directory = "/home/lbariogl/limadou/test/output/"  # Directory to save output histograms and plots
+#input_directory = "/home/lattina/limadou/test_L2/L2/"#"/home/lbariogl/limadou/test/data/"  # Directory containing ROOT files
+#output_directory = "/home/lattina/limadou/test_L2/plots/"  # Directory to save output histograms and plots
 tree_name = "L2"
 
 # coppie, range e label X (ROOT style)
@@ -26,7 +26,7 @@ branch_pairs = {
 nbins = 80  # bins per histogram
 
 # === GET LIST OF ROOT FILES ===
-root_files = glob.glob(os.path.join(input_directory, "*.root"))
+root_files = glob.glob(os.path.join(input_directory, "MC*LVL2.root"))
 if not root_files:
     raise FileNotFoundError(f"No ROOT files found in: {input_directory}")
 
@@ -68,6 +68,7 @@ def process_root_file(input_file_name):
     total_events = tree.num_entries
     print(f"✅ Read TTree '{tree_name}' with {total_events} events.")
 
+    '''
     # === TRIGGER MASK ===
     trig_conf_flag = tree["L2Event/trig_conf_flag[6]"].array(library="np")
     if getattr(trig_conf_flag, "ndim", None) == 2:
@@ -82,9 +83,12 @@ def process_root_file(input_file_name):
         f"Events after trig_mask: {n_after_trig} ({n_after_trig / total_events * 100:.2f}%)"
     )
 
+    
     if n_after_trig == 0:
         print("❌ No events passed trigger mask — skipping file.")
         return
+        
+
 
     # === CLUSTER MASK: events with at least one cluster (non-empty cls_mean_x) ===
     cls_mean_x = tree["L2Event/cls_mean_x"].array(library="ak")
@@ -98,9 +102,10 @@ def process_root_file(input_file_name):
     if n_after_cls == 0:
         print("❌ No events have non-empty clusters — skipping file.")
         return
-
+    '''
+        
     # === FINAL MASK COMBINATION ===
-    mask = trig_mask & cls_mask
+    mask = cls_mask #trig_mask & cls_mask
 
     nsel = int(np.sum(mask))
     print(f"Selected {nsel} events (trigger + cluster mask)")

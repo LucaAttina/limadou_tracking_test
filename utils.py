@@ -125,7 +125,7 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
     Parameters:
       - input_file: path to ROOT file
       - masks_to_apply: optional dict with boolean flags for which masks to apply.
-                        Keys: 'trig', 'trig_count', 'x0_multiplicity', 'x0_m2_multiplicity' (default: trig=True, trig_count=True, others=False)
+                        Keys: 'trig', 'trig_count', 'x0_multiplicity', 'x0_m2_multiplicity' (default: trig=False, trig_count=False, others=False)
                         Example: {'trig': True, 'trig_count': True, 'x0_multiplicity': True, 'x0_m2_multiplicity': False}
       - multiplicity_config: optional dict specifying multiplicity values.
                         Keys: 'x0_count', 'x0_m2_count' (used only if x0_multiplicity or x0_m2_multiplicity is True)
@@ -137,8 +137,8 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
     """
     if masks_to_apply is None:
         masks_to_apply = {
-            "trig": True,
-            "trig_count": True,
+            "trig": False,
+            "trig_count": False,
             "x0_multiplicity": False,
             "x0_m2_multiplicity": False,
         }
@@ -221,6 +221,7 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
             "L2Event/x0",
             "L2Event/x0_m2",
             "L2Event/y0",
+            "L2Event/y0_m2",
             "L2Event/theta_m2",
             "L2Event/theta",
             "L2Event/phi_m2",
@@ -233,9 +234,12 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
             "L2Event/cls_res_y",
             "L2Event/trk_cls_res_x_m2",
             "L2Event/trk_cls_res_y_m2",
+            "L2Event/trk_cls_idx_m2",
+            "L2Event/trk_npoints_m2",
             "L2Event/cls_track_idx",
             "L2Event/trk_idx",
             "L2Event/trk_idx_m2",
+            "L2Event/cls_idx",
         ]
         arrays = tree.arrays(branches, library="ak")[mask]
         n_final = len(arrays)
@@ -290,7 +294,7 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
 
 
 class Cluster:
-    def __init__(self, mean_x, mean_y, mean_z, size, res_x, res_y, track_idx):
+    def __init__(self, mean_x, mean_y, mean_z, size, res_x, res_y, track_idx, cluster_idx):
         self.mean_x = float(mean_x)
         self.mean_y = float(mean_y)
         self.mean_z = float(mean_z)
@@ -298,6 +302,7 @@ class Cluster:
         self.res_x = float(res_x)
         self.res_y = float(res_y)
         self.track_idx = int(track_idx)
+        self.cluster_idx = int(cluster_idx)
 
     def __repr__(self):
         return (
@@ -333,10 +338,35 @@ class Track:
         )
 
 
-
-def analyze_event(evt):
+def get_all_clusters(evt):
     """
-    Restituisce una lista di Track (uno per ogni track_idx).
+    Return all clusters list for event 'evt' 
+    """
+    cls_mean_x = list(evt["L2Event/cls_mean_x"])
+    cls_mean_y = list(evt["L2Event/cls_mean_y"])
+    cls_mean_z = list(evt["L2Event/cls_mean_z"])
+    cls_size = list(evt["L2Event/cls_size"])
+    cls_idx_list = list(evt["L2Event/cls_idx"])
+    
+    all_cls = []
+    for i in range(len(cls_mean_x)):
+        cluster = Cluster(
+            mean_x=cls_mean_x[i],
+            mean_y=cls_mean_y[i],
+            mean_z=cls_mean_z[i],
+            size=cls_size[i],
+            res_x=0.0,
+            res_y=0.0,
+            track_idx=-999,
+            cluster_idx=int(cls_idx_list[i]),
+        )
+        all_cls.append(cluster)
+    
+    return all_cls
+
+def analyze_event(evt,method=""):
+    """
+    Restituisce una lista di Track (uno per ogni track_idx) e la lista di cluster per il dato evento.
 
     Ogni Track contiene:
       - track_idx
@@ -347,97 +377,347 @@ def analyze_event(evt):
       - missing_in_acc
     """
 
-    # --- Event-level quantities ---
-    x0_val = safe_first(evt["L2Event/x0"])
-    y0_val = safe_first(evt["L2Event/y0"])
-    theta_val = safe_first(evt["L2Event/theta"])
-    phi_val = safe_first(evt["L2Event/phi"])
-
-    theta_rad = math.radians(theta_val)
-    phi_rad = math.radians(phi_val)
+    # Selection criteria to be applied
+    apply_cut_tr = True # if True, selects hit_tr = True
+    apply_cut_acc = True # if True, missing_in_acceptance = True
+    apply_cut_same_z = True # if True, skips tracks with clusters on same z
 
     # Track indices
-    track_idx_list = list(evt["L2Event/trk_idx"])
+    track_idx_list = list(evt[f"L2Event/trk_idx{method}"])
 
-    # --- Build all clusters as Cluster objects ---
+    # --- Build Cluster and Track objects lists ---
     clusters = []
-    for mx, my, mz, sz, rx, ry, ti in zip(
-        evt["L2Event/cls_mean_x"],
-        evt["L2Event/cls_mean_y"],
-        evt["L2Event/cls_mean_z"],
-        evt["L2Event/cls_size"],
-        evt["L2Event/cls_res_x"],
-        evt["L2Event/cls_res_y"],
-        evt["L2Event/cls_track_idx"],
-    ):
-        if ti in (-1, -999):
-            continue
-
-        clusters.append(
-            Cluster(
-                mean_x=mx,
-                mean_y=my,
-                mean_z=mz,
-                size=sz,
-                res_x=rx,
-                res_y=ry,
-                track_idx=ti,
-            )
-        )
-
-    # --- Build Track objects ---
     track_list = []
 
-    for ti in track_idx_list:
+    # --- Build all clusters list ---
+    all_cls = get_all_clusters(evt)
 
-        # clusters assigned to this track
-        cls_for_track = [c for c in clusters if c.track_idx == ti]
+    # if no tracks are reconstructed, just return clusters (if any)
+    if len(track_idx_list) == 0:
+        return [], all_cls
 
-        track_obj = Track(
-            track_idx=ti,
-            x0=x0_val,
-            y0=y0_val,
-            theta=theta_val,
-            phi=phi_val,
-            clusters=cls_for_track,
-        )
+    # if m1
+    if method == "":
 
+        # --- Event-level quantities ---
+        x0_val = safe_first(evt[f"L2Event/x0"])
+        y0_val = safe_first(evt[f"L2Event/y0"])
+        theta_val = safe_first(evt[f"L2Event/theta"])
+        phi_val = safe_first(evt[f"L2Event/phi"])
 
-        # --- Logic depending on n_cls ---
-        if track_obj.n_cls == 2:
-            # Convert Cluster -> dict for compatibility with old handle_two_cluster_track
-            cls_dicts = [
-                {
-                    "mean_x": c.mean_x,
-                    "mean_y": c.mean_y,
-                    "mean_z": c.mean_z,
-                    "size": c.size,
-                    "res_x": c.res_x,
-                    "res_y": c.res_y,
-                    "track_idx": c.track_idx,
-                }
-                for c in cls_for_track
-            ]
+        theta_rad = math.radians(theta_val)
+        phi_rad = math.radians(phi_val)
 
-            result = handle_two_cluster_track(
-                cls_dicts,  # now a list of dictionaries, as expected
-                theta_rad,
-                phi_rad,
-                dist_z=3.5,
+        cls_res_x = list(evt["L2Event/cls_res_x"])
+        cls_res_y = list(evt["L2Event/cls_res_y"])
+        cls_track_idx = list(evt["L2Event/cls_track_idx"])
+
+        cls_mean_x = list(evt["L2Event/cls_mean_x"])
+        cls_mean_y = list(evt["L2Event/cls_mean_y"])
+        cls_mean_z = list(evt["L2Event/cls_mean_z"])
+        cls_size = list(evt["L2Event/cls_size"])
+        cls_idx_list = list(evt["L2Event/cls_idx"])
+
+        for mx, my, mz, sz, rx, ry, ti, ci in zip(
+            cls_mean_x,
+            cls_mean_y,
+            cls_mean_z,
+            cls_size,
+            cls_res_x,
+            cls_res_y,
+            cls_track_idx,
+            cls_idx_list, 
+        ):
+            
+            if ti in (-1, -999):
+               continue
+
+            clusters.append(
+                Cluster(
+                    mean_x=mx,
+                    mean_y=my,
+                    mean_z=mz,
+                    size=sz,
+                    res_x=rx,
+                    res_y=ry,
+                    track_idx=ti,
+                    cluster_idx=ci,
+                )
             )
 
-            if result:
-                track_obj.missing_in_acc = result["missing_in_acceptance"]
-                track_obj.hit_tr = result["hit_TR"]
+        for ti in track_idx_list:
+            # clusters assigned to this track
+            cls_for_track = [c for c in clusters if c.track_idx == ti]
 
-        else:
-            # All other cases → use track_hit_TR
-            track_obj.hit_tr = track_hit_TR(
-                track_obj.x0, track_obj.y0, theta_rad, phi_rad
+            if not cls_for_track: # skip tracks without clusters
+                continue
+
+            track_obj = Track(
+                track_idx=ti,
+                x0=x0_val,
+                y0=y0_val,
+                theta=theta_val,
+                phi=phi_val,
+                clusters=cls_for_track,
             )
-            track_obj.missing_in_acc = False
 
-        track_list.append(track_obj)
+            # skip tracks if clusters on same z (only if apply_cut_same_z == true)
+            if(apply_cut_same_z):
+                same_z_count = len(track_obj.clusters) - len(set(c.mean_z for c in track_obj.clusters))
+                if same_z_count > 0:
+                    #print(f"    ⚠️ Track M1 {ti}: clusters on same z, skip")
+                    continue
 
-    return track_list
+            # --- Logic depending on n_cls ---
+            if track_obj.n_cls == 2: # only for 2-cluster tracks
+                # Convert Cluster -> dict for compatibility with old handle_two_cluster_track
+                cls_dicts = [
+                    {
+                        "mean_x": c.mean_x,
+                        "mean_y": c.mean_y,
+                        "mean_z": c.mean_z,
+                        "size": c.size,
+                        "res_x": c.res_x,
+                        "res_y": c.res_y,
+                        "track_idx": c.track_idx,
+                    }
+                    for c in cls_for_track
+                ]
 
+                result = handle_two_cluster_track(
+                    cls_dicts,  # now a list of dictionaries, as expected
+                    theta_rad,
+                    phi_rad,
+                    dist_z=8.5,
+                )
+
+                if result:
+                    track_obj.missing_in_acc = result["missing_in_acceptance"]
+                    track_obj.hit_tr = result["hit_TR"]
+
+            else:
+                # All other cases → use track_hit_TR
+                track_obj.hit_tr = track_hit_TR(
+                    track_obj.x0, track_obj.y0, theta_rad, phi_rad
+                )
+                track_obj.missing_in_acc = False
+
+            # event selection 
+            if apply_cut_tr and apply_cut_acc:
+                # trigger and acceptance cuts
+                if track_obj.hit_tr and not track_obj.missing_in_acc:
+                    track_list.append(track_obj)
+            elif apply_cut_tr and not apply_cut_acc:
+                # trigger cut
+                if track_obj.hit_tr:
+                    track_list.append(track_obj)
+            elif not apply_cut_tr and apply_cut_acc:
+                # acceptance cut
+                if not track_obj.missing_in_acc:
+                    track_list.append(track_obj)
+            else:
+                # No cuts
+                track_list.append(track_obj)
+        
+        return track_list, all_cls
+
+    # if m2
+    else:
+        # --- Event-level quantities ---
+        x0_arr = list(evt[f"L2Event/x0_m2"])
+        y0_arr = list(evt[f"L2Event/y0_m2"])
+        theta_arr = list(evt[f"L2Event/theta_m2"])
+        phi_arr = list(evt[f"L2Event/phi_m2"])
+
+        # read branches to define clusters parameters (raw data from root file)
+        trk_npoints_m2_arr = list(evt["L2Event/trk_npoints_m2"])
+        trk_cls_idx_m2_arr = list(evt["L2Event/trk_cls_idx_m2"])
+        res_x_m2_arr = list(evt["L2Event/trk_cls_res_x_m2"])
+        res_y_m2_arr = list(evt["L2Event/trk_cls_res_y_m2"])  
+
+        # check consistency between track list length and trk_npoints length
+        if len(track_idx_list) != len(trk_npoints_m2_arr):
+            print(f"⚠️ WARNING: Dimensions are not equal! "
+                  f"trk_idx_m2={len(track_idx_list)}, trk_npoints_m2={len(trk_npoints_m2_arr)}")
+            return [], all_cls
+
+        n_tracks = len(track_idx_list)
+
+        # runs over trk_npoints_m2 elements
+        offset = 0
+
+        for it in range(n_tracks):
+            ti = track_idx_list[it]  # track ID
+            n_clusters_this_track = trk_npoints_m2_arr[it]   # cluster number for track
+
+            x0_val = x0_arr[it]
+            y0_val = y0_arr[it]
+            theta_val = theta_arr[it]
+            phi_val = phi_arr[it]
+
+            # check for trk_cls
+            if offset + n_clusters_this_track > len(trk_cls_idx_m2_arr):
+                print(f"⚠️ WARNING M2: Out of range! "
+                      f"offset={offset}, n={n_clusters_this_track}, len(trk_cls_idx)={len(trk_cls_idx_m2_arr)}")
+                break
+
+            # cluster idx and residuals for the current track
+            cls_idx_this_track = trk_cls_idx_m2_arr[offset:offset+n_clusters_this_track]
+            res_x_this_track = res_x_m2_arr[offset:offset+n_clusters_this_track]
+            res_y_this_track = res_y_m2_arr[offset:offset+n_clusters_this_track]
+
+            # offset update
+            offset += n_clusters_this_track
+
+            # Cluster object 
+            cls_for_track = []
+
+            for ci, rx, ry in zip(cls_idx_this_track, res_x_this_track, res_y_this_track):
+                
+                # Invalid index, skip
+                if ci in (-1, -999):
+                    print(f"  ⚠️ Track M2 {ti}: cluster with invalid ID {ci}, skip")
+                    continue
+                
+                # Conversion 1-BASED to 0-based
+                ci_0b = ci - 1 # ci_0b is the absolute index in all_cls list
+                
+                if ci_0b < 0 or ci_0b >= len(all_cls):
+                    print(f"  ⚠️ Track M2 {ti}: cluster with ID {ci} out of range")
+                    continue
+                
+                # create cluster using the existing element from all_cls
+                base_cluster = all_cls[ci_0b]
+                cluster = Cluster(
+                    mean_x=base_cluster.mean_x,
+                    mean_y=base_cluster.mean_y,
+                    mean_z=base_cluster.mean_z,
+                    size=base_cluster.size,
+                    res_x=rx,
+                    res_y=ry,
+                    track_idx=ti,
+                    cluster_idx=ci,
+                )
+                cls_for_track.append(cluster)
+
+            # --- Track object construction ---
+            if len(cls_for_track) == 0:
+                print(f"  ⚠️ Track M2 {ti}: no valid cluster, skip")
+                continue
+
+            track_obj = Track(
+                track_idx = ti,
+                x0 = x0_val,
+                y0 = y0_val,
+                theta = theta_val,
+                phi = phi_val,
+                clusters = cls_for_track,
+            )
+
+            # skip tracks if clusters on same z
+            if(apply_cut_same_z):
+                same_z_count = len(track_obj.clusters) - len(set(c.mean_z for c in track_obj.clusters))
+                if same_z_count > 0:
+                    #print(f"    ⚠️ Track M2 {ti}: clusters on same z, skip")
+                    continue
+           
+            # --- Logic depending on n_cls ---
+            if track_obj.n_cls == 2: # only for 2-cluster tracks
+                # Convert Cluster -> dict for compatibility with old handle_two_cluster_track
+                cls_dicts = [
+                    {
+                        "mean_x": c.mean_x,
+                        "mean_y": c.mean_y,
+                        "mean_z": c.mean_z,
+                        "size": c.size,
+                        "res_x": c.res_x,
+                        "res_y": c.res_y,
+                        "track_idx": c.track_idx,
+                    }
+                    for c in cls_for_track
+                ]
+
+                result = handle_two_cluster_track(
+                    cls_dicts,  # now a list of dictionaries, as expected
+                    math.radians(theta_val),
+                    math.radians(phi_val),
+                    dist_z=8.5, 
+                )
+
+                if result:
+                    track_obj.missing_in_acc = result["missing_in_acceptance"]
+                    track_obj.hit_tr = result["hit_TR"]
+                    
+            else:
+                # All other cases → use track_hit_TR
+                track_obj.hit_tr = track_hit_TR(
+                    track_obj.x0, track_obj.y0, math.radians(theta_val), math.radians(phi_val)
+                )
+                track_obj.missing_in_acc = False
+
+            # event selection already applied during reconstruction for m2 (check if applied)
+            if apply_cut_tr and apply_cut_acc:
+                # trigger and acceptance cuts
+                if track_obj.hit_tr and not track_obj.missing_in_acc:
+                    track_list.append(track_obj)
+            elif apply_cut_tr and not apply_cut_acc:
+                # trigger cut
+                if track_obj.hit_tr:
+                    track_list.append(track_obj)
+            elif not apply_cut_tr and apply_cut_acc:
+                # acceptance cut
+                if not track_obj.missing_in_acc:
+                    track_list.append(track_obj)
+            else:
+                # No cuts
+                track_list.append(track_obj)
+
+        return track_list, all_cls # all clusters wrt events with at least 1 track
+    
+
+def check_event_tree(
+    input_file, output_dir, multiplicity_config=None
+):
+    """
+    Search event info from EventSummary TTree.
+    Usefult to apply multiplicity selection to events.
+    """
+    
+    print("📥 Input file: ", input_file)
+    print("📤 Output directory: ", output_dir)
+
+    fin = uproot.open(input_file)
+    tree1 = fin["SelectedEvents()"]
+    tree2 = fin["SelectedEvents(_m2)"]
+    tree_mult = fin["EventSummary"]
+
+    if multiplicity_config is None:
+        multiplicity_config = {"x0_count": None, "x0_m2_count": None}
+
+    x0_sel = multiplicity_config["x0_count"]
+    x0_m2_sel = multiplicity_config["x0_m2_count"]
+
+    # Read from EventSummary
+    ev_idx_all = tree_mult["event"].array(library="np")
+    x0_mult_all = tree_mult["mult_m1"].array(library="np")
+    x0_m2_mult_all = tree_mult["mult_m2"].array(library="np") 
+    
+    # Good event array (true by default)
+    good_events = np.ones(len(ev_idx_all), dtype=bool)
+
+    if x0_sel is not None: # comparison with multiplicity_config
+        good_events &= (x0_mult_all == x0_sel)
+    if x0_m2_sel is not None:
+        good_events &= (x0_m2_mult_all == x0_m2_sel)
+    selected_events = set(ev_idx_all[good_events])
+
+    # Read idxs from SelectedEvents trees
+    ev1 = tree1["event_idx"].array(library="np")
+    ev2 = tree2["event_idx"].array(library="np")
+
+    mask1 = np.array([e in selected_events for e in ev1])
+    mask2 = np.array([e in selected_events for e in ev2])
+
+    print(f"\nGood events matching multiplicities: m1 = {mask1.sum()}, m2 = {mask2.sum()}")
+
+    return x0_sel, x0_m2_sel, mask1, mask2, tree1, tree2
