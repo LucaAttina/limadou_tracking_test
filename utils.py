@@ -350,6 +350,8 @@ def get_all_clusters(evt):
     
     all_cls = []
     for i in range(len(cls_mean_x)):
+        if cls_idx_list[i] == -999:
+            continue
         cluster = Cluster(
             mean_x=cls_mean_x[i],
             mean_y=cls_mean_y[i],
@@ -488,7 +490,7 @@ def analyze_event(evt,method=""):
                     cls_dicts,  # now a list of dictionaries, as expected
                     theta_rad,
                     phi_rad,
-                    dist_z=8.5,
+                    dist_z=8.5, # old 3.5
                 )
 
                 if result:
@@ -721,3 +723,33 @@ def check_event_tree(
     print(f"\nGood events matching multiplicities: m1 = {mask1.sum()}, m2 = {mask2.sum()}")
 
     return x0_sel, x0_m2_sel, mask1, mask2, tree1, tree2
+
+
+def remove_duplicate_tracks(tracks, event_idx = None):
+    """
+    Check for duplicate tracks.
+    Two tracks are considered duplicates if they are built from the same set of clusters (trk.clusters)
+    Only the first occurrence is kept.
+    """
+    seen = {} # track position (not track index)
+    duplicate_indices = []
+
+    for idx, tr in enumerate(tracks):
+        clusters_key = tuple(sorted(c.cluster_idx for c in tr.clusters)) # sort clusters
+        if clusters_key in seen:
+            # duplicate track found
+            duplicate_indices.append(idx)
+            orig_idx = tracks[seen[clusters_key]].track_idx
+            print(
+                f"⚠️ Event {event_idx}: Duplicate track trk_idx={tr.track_idx} "
+                f"(duplicates trk_idx={orig_idx})"
+            )
+        else:
+            seen[clusters_key] = idx
+    # remove clones and return list w/o duplicates
+    for idx in sorted(duplicate_indices, reverse=True):
+        removed_trk_idx = tracks[idx].track_idx
+        del tracks[idx]
+        print(f"🗑️ Rimosso trk_idx={removed_trk_idx} duplicato")
+
+    return tracks

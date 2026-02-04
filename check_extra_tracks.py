@@ -16,7 +16,7 @@ from geometry_utils import (
 
 ROOT.gStyle.SetOptStat(0)
 
-from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters
+from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks
 
 # ============================================================
 # Text output and histogram filling (single method)
@@ -140,6 +140,8 @@ def write_txt_dump(
             f.write("# ALL CLUSTERS FOR THIS EVENT\n")
             f.write("#" * 50 + "\n")
             for j, c in enumerate(all_clusters):
+                if c.cluster_idx == -999:
+                    continue
                 f.write(
                     f"- Cluster {j}: ID={c.cluster_idx}\n"
                     f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}, z={c.mean_z:.3f}, size={c.size}\n"
@@ -163,9 +165,11 @@ def compare_txt(
     h_resx_m1, h_resx_m2,
     h_resy_m1, h_resy_m2,
     h_dsum_vs_ncls_m1, h_dsum_vs_ncls_m2,
-    counters_m1, counters_m2
+    counters_m1, counters_m2,
+    debug_all=False,
 ):
-    """Write event details into a TXT file comparing m1 and m2 side by side."""
+    """Write event details into a TXT file comparing m1 and m2 side by side.
+       If debug_all is False, skip events with same multiplicity and good tracks in both methods."""
     print(f"📝 Writing detailed event dump (m1 vs m2) to {txt_output}")
 
     trk_num_m1 = 0
@@ -184,6 +188,48 @@ def compare_txt(
             if len(tracks_m1) == 0 and len(tracks_m2) == 0:
                 continue
 
+            # check if we should skip this event (if not in debug_all mode)
+            if not debug_all:
+                should_skip = True
+                # condition 1: different multiplicity
+                if len(tracks_m1) != len(tracks_m2):
+                    should_skip = False
+                # condition 2: difference in good track
+                else:
+                    for track_num in range(len(tracks_m1)):
+                        if track_num >= len(tracks_m2):
+                            continue
+
+                        trk_m1 = tracks_m1[track_num]
+                        trk_m2 = tracks_m2[track_num]
+
+                        # check if tracks are good
+                        is_good_m1 = (
+                            trk_m1.n_cls < 4
+                            and not any(c.mean_x == -999 for c in trk_m1.clusters)
+                            and trk_m1.hit_tr
+                            and (trk_m1.n_cls != 2 or not trk_m1.missing_in_acc)
+                            and trk_m1.D_sum < 10
+                            and (len(trk_m1.clusters) - len(set(c.mean_z for c in trk_m1.clusters))) == 0
+                        )
+
+                        is_good_m2 = (
+                            trk_m2.n_cls < 4
+                            and not any(c.mean_x == -999 for c in trk_m2.clusters)
+                            and trk_m2.hit_tr
+                            and (trk_m2.n_cls != 2 or not trk_m2.missing_in_acc)
+                            and trk_m2.D_sum < 10
+                            and (len(trk_m2.clusters) - len(set(c.mean_z for c in trk_m2.clusters))) == 0
+                        )
+
+                        # if one is not good while the other is, print details
+                        if not (is_good_m1 and is_good_m2):
+                            should_skip = False
+                            break
+                if should_skip:
+                    continue
+
+            # count printed tracks only
             trk_num_m1 += len(tracks_m1)
             trk_num_m2 += len(tracks_m2)
             
@@ -365,7 +411,9 @@ def compare_txt(
             f.write("# ALL CLUSTERS FOR THIS EVENT\n")
             f.write("#" * 50 + "\n")
 
-            for j, c in enumerate(all_clusters):                
+            for j, c in enumerate(all_clusters): 
+                if c.cluster_idx == -999:
+                    continue               
                 f.write(
                     f"- Cluster {j}: ID={c.cluster_idx}\n"
                     f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}, z={c.mean_z:.3f}, size={c.size}\n"
@@ -551,7 +599,7 @@ def make_summary_hist(tracks, output_file, output_dir, method=""):
 # ============================================================
 # Main orchestrator
 # ============================================================
-def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_apply = None, multiplicity_config = None, method=""):
+def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_apply = None, multiplicity_config = None, method="", debug_all=False):
     load_geometry()
 
     if masks_to_apply is None:
@@ -592,8 +640,12 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
     # separe methods 
     # if method == "both" -> execute both m1 and m2 
     if(method == "both"):
-        txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.txt")
-        root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.root")
+        if(debug_all):
+            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_all.txt")
+            root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_all.root")
+        else: 
+            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.txt")
+            root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.root")
     else:
         txt_output = os.path.join(output_dir, f"{base}_selected{method}.txt")
         root_output = os.path.join(output_dir, f"{base}_selected{method}.root")
@@ -630,6 +682,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         for i, rslt in enumerate(results):
             for tr in rslt["m1"]:
                 tr.event = i # add event index to track object
+            remove_duplicate_tracks(rslt["m1"], event_idx=i)
             all_tracks_m1.extend(rslt["m1"])
 
 
@@ -655,7 +708,8 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         for i, rslt in enumerate(results):
             for tr in rslt["m2"]:
                 tr.event = i # add event index to track object
-            all_tracks_m2.extend(rslt["m2"])
+            remove_duplicate_tracks(rslt["m2"], event_idx=i)
+            all_tracks_m2.extend(rslt["m2"])          
 
     if method == "both":
         compare_txt(
@@ -667,6 +721,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
             h_resy_m1, h_resy_m2,
             h_dsum_vs_ncls_m1, h_dsum_vs_ncls_m2,
             counters_m1, counters_m2,
+            debug_all,
         )
 
         h_ncls_m1.Write()
@@ -767,6 +822,8 @@ if __name__ == "__main__":
     parser.add_argument("--input", required=True, help="Input file.")
     parser.add_argument("--output-dir", default="./output", help="Output directory. Default is ./output")
     parser.add_argument("--save-tree", action="store_true", help="Build TTree with tracks info.")
+    parser.add_argument("--debug-all", action="store_true", help="Print all tracks into txt dump. Default: print differences between m1 and m2 methods.")
+
     
     method_group = parser.add_mutually_exclusive_group() # either choose m1 or m2, no argument for both
     method_group.add_argument("--use-m2", action="store_true", help="Check for good tracks using only m2 method (default: use both).")
@@ -776,13 +833,13 @@ if __name__ == "__main__":
     # choose applied method
     if (not args.use_m1) and (not args.use_m2):
         print("\n --- Running both methods (default option) --- ")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both")
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both", debug_all=args.debug_all)
     elif args.use_m1:
         print(f"\n --- Running m1 method ---")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="")
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="", debug_all=args.debug_all)
     elif args.use_m2:
         print(f"\n --- Running m2 method ---")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="_m2")
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="_m2", debug_all=args.debug_all)
 
 
 
