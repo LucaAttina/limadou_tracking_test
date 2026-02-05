@@ -753,3 +753,25 @@ def remove_duplicate_tracks(tracks, event_idx = None):
         print(f"🗑️ Rimosso trk_idx={removed_trk_idx} duplicato")
 
     return tracks
+
+
+def is_good_track(trk):
+    """
+    Check conditions for good track.
+    """
+    
+    issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
+    same_z_count = len(trk.clusters) - len(
+        set(c.mean_z for c in trk.clusters)
+    )
+
+    is_good = (
+        trk.n_cls < 4
+        and not issue_meanx
+        and trk.hit_tr
+        and (trk.n_cls != 2 or not trk.missing_in_acc)
+        and trk.D_sum < 10
+        and same_z_count == 0
+    )
+    return is_good, issue_meanx, same_z_count
+

@@ -16,7 +16,7 @@ from geometry_utils import (
 
 ROOT.gStyle.SetOptStat(0)
 
-from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks
+from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks, is_good_track
 
 # ============================================================
 # Text output and histogram filling (single method)
@@ -74,10 +74,16 @@ def write_txt_dump(
 
                 # Issues detection (compute locally from clusters to avoid dependency
                 # on analyze_event populating trk.issues)
-                issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
-                same_z_count = len(trk.clusters) - len(
-                    set(c.mean_z for c in trk.clusters)
-                )
+                
+                #issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
+                #same_z_count = len(trk.clusters) - len(
+                #    set(c.mean_z for c in trk.clusters)
+                #)
+
+
+
+                # conditions for good tracks
+                is_good_tr, issue_meanx, same_z_count = is_good_track(trk)
 
                 if issue_meanx:
                     counters["bad_meanx"] += 1
@@ -86,19 +92,9 @@ def write_txt_dump(
                 if same_z_count >= 2:
                     counters["same_z_tracks"] += 1
 
-                # conditions for good tracks
-                is_good_track = (
-                        n_cls < 4
-                        and not issue_meanx
-                        and trk.hit_tr
-                        and (n_cls != 2 or not trk.missing_in_acc)
-                        and Dsum < 10
-                        and same_z_count == 0
-                )
-
                 # --- Write track header ---
                 cluster_ids = [str(c.cluster_idx) for c in trk.clusters]
-                if is_good_track:
+                if is_good_tr:
                     f.write("### GOOD TRACK ###\n")
                     good_tracks += 1
                 f.write(
@@ -204,23 +200,8 @@ def compare_txt(
                         trk_m2 = tracks_m2[track_num]
 
                         # check if tracks are good
-                        is_good_m1 = (
-                            trk_m1.n_cls < 4
-                            and not any(c.mean_x == -999 for c in trk_m1.clusters)
-                            and trk_m1.hit_tr
-                            and (trk_m1.n_cls != 2 or not trk_m1.missing_in_acc)
-                            and trk_m1.D_sum < 10
-                            and (len(trk_m1.clusters) - len(set(c.mean_z for c in trk_m1.clusters))) == 0
-                        )
-
-                        is_good_m2 = (
-                            trk_m2.n_cls < 4
-                            and not any(c.mean_x == -999 for c in trk_m2.clusters)
-                            and trk_m2.hit_tr
-                            and (trk_m2.n_cls != 2 or not trk_m2.missing_in_acc)
-                            and trk_m2.D_sum < 10
-                            and (len(trk_m2.clusters) - len(set(c.mean_z for c in trk_m2.clusters))) == 0
-                        )
+                        is_good_m1 , _ , _  = is_good_track(trk_m1)
+                        is_good_m2 , _ , _ = is_good_track(trk_m2)
 
                         # if one is not good while the other is, print details
                         if not (is_good_m1 and is_good_m2):
@@ -261,11 +242,14 @@ def compare_txt(
                         h_resy_m1.Fill(c.res_y)
                     
                     # Issues detection
-                    issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
-                    same_z_count = len(trk.clusters) - len(
-                        set(c.mean_z for c in trk.clusters)
-                    )
-                    
+                    #issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
+                    #same_z_count = len(trk.clusters) - len(
+                    #    set(c.mean_z for c in trk.clusters)
+                    #)
+
+                    # check if good track
+                    is_good_track_m1, issue_meanx, same_z_count = is_good_track(trk)
+
                     if issue_meanx:
                         counters_m1["bad_meanx"] += 1
                     if not trk.hit_tr:
@@ -273,16 +257,6 @@ def compare_txt(
                     if same_z_count >= 2:
                         counters_m1["same_z_tracks"] += 1
 
-                    # check if good track
-                    is_good_track_m1 = (
-                        n_cls < 4
-                        and not issue_meanx
-                        and trk.hit_tr
-                        and (n_cls != 2 or not trk.missing_in_acc)
-                        and Dsum < 10
-                        and same_z_count == 0
-                    )
-                    
                     # Build string m1
                     cluster_ids = [str(c.cluster_idx) for c in trk.clusters]
                     if is_good_track_m1:
@@ -336,10 +310,15 @@ def compare_txt(
                         h_resy_m2.Fill(c.res_y)
                     
                     # Issues detection
-                    issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
-                    same_z_count = len(trk.clusters) - len(
-                        set(c.mean_z for c in trk.clusters)
-                    )
+                    #issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
+                    #same_z_count = len(trk.clusters) - len(
+                    #    set(c.mean_z for c in trk.clusters)
+                    #)
+                    
+
+                    
+                    # check if good track
+                    is_good_track_m2, issue_meanx, same_z_count = is_good_track(trk)
                     
                     if issue_meanx:
                         counters_m2["bad_meanx"] += 1
@@ -347,16 +326,6 @@ def compare_txt(
                         counters_m2["no_TR_hit"] += 1
                     if same_z_count >= 2:
                         counters_m2["same_z_tracks"] += 1
-                    
-                    # check if good track
-                    is_good_track_m2 = (
-                        n_cls < 4
-                        and not issue_meanx
-                        and trk.hit_tr
-                        and (n_cls != 2 or not trk.missing_in_acc)
-                        and Dsum < 10
-                        and same_z_count == 0
-                    )
 
                     # Build string M2
                     cluster_ids = [str(c.cluster_idx) for c in trk.clusters]
@@ -486,6 +455,9 @@ def create_ttree(root_file, tracks, method=""):
     
     # One TTree entry per track
     for trk in tracks:
+        is_good_tr , _ , _ = is_good_track(trk)
+        if not is_good_tr:
+            continue
         x0_val[0] = trk.x0
         y0_val[0] = trk.y0
         theta_val[0] = trk.theta
