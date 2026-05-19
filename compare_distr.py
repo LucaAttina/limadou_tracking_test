@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import yaml
 import ROOT
 import glob
 import os
@@ -40,10 +41,13 @@ def compare_distributions(
 
     c = ROOT.TCanvas("c_compare", "Angular comparison", 900, 700)
 
-    out_root = os.path.join(output_dir, f"{base_name}_x0_{x0_sel}_x0m2_{x0_m2_sel}.root")
+    base = os.path.basename(input_file)
+    prefix = base.split("_LVL")[0]
+
+    out_root = os.path.join(output_dir, f"{base_name}_{prefix}_x0_{x0_sel}_x0m2_{x0_m2_sel}.root")
     fout = ROOT.TFile(out_root, "RECREATE")
 
-    pdf_path = os.path.join(output_dir, f"{base_name}_x0_{x0_sel}_x0m2_{x0_m2_sel}.pdf")
+    pdf_path = os.path.join(output_dir, f"{base_name}_{prefix}_x0_{x0_sel}_x0m2_{x0_m2_sel}.pdf")
     c.Print(pdf_path + "[") 
 
     # loop over branches pairs
@@ -125,9 +129,9 @@ if __name__ == "__main__":
     input_file = os.path.abspath(args.input)
     output_dir = os.path.abspath(args.output)
 
-    multiplicity_config = {
-        "x0_count": None, 
-        "x0_m2_count": None
-    }
+    # read multiplicity cuts from config
+    with open("config/config_check_hough.yaml", "r") as f_cfg:
+        config = yaml.safe_load(f_cfg)
+    multiplicity_config = config["multiplicity_config"]
     
     compare_distributions(input_file, output_dir, multiplicity_config)

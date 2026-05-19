@@ -1,7 +1,11 @@
 input_dir: "/home/luca/limadou/test_L2/L2/" #"/data/lbariogl/limadou/simulations/new/MC_6_LVL2_SKIM.root"
 output_dir: "/home/lattina/limadou/test_L2/output/" #/test/output/comp"
-mask_trig: False
-mask_trig_count: False
+masks_to_apply:
+  mask_trig: False
+  mask_trig_count: False
+  mask_x0_multiplicity: False
+  mask_x0_m2_multiplicity: False
+multiplicity_config:
+  x0_count: None
+  x0_m2_count: None
 apply_multiplicity: False
-x0_count: None
-x0_m2_count: None

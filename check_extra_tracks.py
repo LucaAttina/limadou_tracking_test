@@ -1,4 +1,6 @@
 import sys
+import array
+import yaml
 import ROOT
 import uproot
 import awkward as ak
@@ -72,16 +74,6 @@ def write_txt_dump(
                     h_resx.Fill(c.res_x)
                     h_resy.Fill(c.res_y)
 
-                # Issues detection (compute locally from clusters to avoid dependency
-                # on analyze_event populating trk.issues)
-                
-                #issue_meanx = any(c.mean_x == -999 for c in trk.clusters)
-                #same_z_count = len(trk.clusters) - len(
-                #    set(c.mean_z for c in trk.clusters)
-                #)
-
-
-
                 # conditions for good tracks
                 is_good_tr, issue_meanx, same_z_count = is_good_track(trk)
 
@@ -117,9 +109,11 @@ def write_txt_dump(
                     if not trk.hit_tr:
                         f.write("    - no_TR_hit\n")
                     if trk.missing_in_acc:
-                        f.write("  - missing point in acceptance\n")
+                        f.write("    - missing point in acceptance\n")
                     if same_z_count > 0:
-                        f.write("  - clusters with same Z\n")
+                        f.write("    - clusters with same Z\n")
+                    if Dsum > 10:
+                        f.write("    - Dsum > 10\n")
 
                 # --- Clusters ---
                 for j, c in enumerate(trk.clusters):
@@ -270,7 +264,7 @@ def compare_txt(
                     m1_str += f"clusters used: {', '.join(cluster_ids)}\n"
                     
                     # Issues
-                    if issue_meanx or same_z_count > 0 or not trk.hit_tr or trk.missing_in_acc:
+                    if issue_meanx or same_z_count > 0 or not trk.hit_tr or trk.missing_in_acc or Dsum > 10:
                         m1_str += "⚠️ Issues:\n"
                         if issue_meanx:
                             m1_str += "  - mean_x = -999\n"
@@ -282,6 +276,8 @@ def compare_txt(
                             m1_str += "  - missing point in acceptance\n"
                         if same_z_count > 0:
                             m1_str += "  - clusters with same Z\n"
+                        if Dsum > 10:
+                            m1_str += "  - Dsum > 10\n"
                     
                     # Clusters details
                     for j, c in enumerate(trk.clusters):
@@ -352,6 +348,8 @@ def compare_txt(
                             m2_str += "  - missing point in acceptance\n"
                         if same_z_count > 0:
                             m2_str += "  - clusters with same Z\n"
+                        if Dsum > 10:
+                            m2_str += "  - Dsum > 10\n"
                     
                     # Clusters details
                     for j, c in enumerate(trk.clusters):
@@ -433,7 +431,7 @@ def create_ttree(root_file, tracks, method=""):
     """Create and write a ROOT TTree with selected event-level info."""
 
     root_file.cd()
-    tree_out = ROOT.TTree(f"SelectedEvents({method})", f"Selected Events after filtering({method})")
+    tree_out = ROOT.TTree(f"SelectedEvents{method}", f"Selected Events after filtering({method})")
 
     x0_val = np.zeros(1, dtype=np.float32)
     y0_val = np.zeros(1, dtype=np.float32)
@@ -443,6 +441,15 @@ def create_ttree(root_file, tracks, method=""):
     hit_tr = np.zeros(1, dtype=np.int32)
     in_acc = np.zeros(1, dtype=np.int32)
     event_idx = np.zeros(1, dtype=np.int32)
+    d_sum = np.zeros(1, dtype=np.float32)
+
+    # new: clusters coordinates are now saved
+    #cl_x = array.array('f', [0.]*max_clusters)
+    #cl_y = array.array('f', [0.]*max_clusters)
+    #cl_z = array.array('f', [0.]*max_clusters)
+    cl_x = ROOT.vector('float')()
+    cl_y = ROOT.vector('float')()
+    cl_z = ROOT.vector('float')()
 
     tree_out.Branch(f"x0{method}", x0_val, "x0/F")
     tree_out.Branch(f"y0{method}", y0_val, "y0/F")
@@ -452,12 +459,21 @@ def create_ttree(root_file, tracks, method=""):
     tree_out.Branch("track_hit_TR", hit_tr, "track_hit_TR/I")
     tree_out.Branch("missing_in_acceptance", in_acc, "missing_in_acceptance/I")
     tree_out.Branch(f"event_idx", event_idx, "event_idx/I")
+    tree_out.Branch(f"d_sum", d_sum, "d_sum/F")
+    #tree_out.Branch("cl_x", cl_x, f"cl_x[{max_clusters}]/F")
+    #tree_out.Branch("cl_y", cl_y, f"cl_y[{max_clusters}]/F")
+    #tree_out.Branch("cl_z", cl_z, f"cl_z[{max_clusters}]/F")
+    tree_out.Branch("cl_x", cl_x)
+    tree_out.Branch("cl_y", cl_y)
+    tree_out.Branch("cl_z", cl_z)
     
     # One TTree entry per track
     for trk in tracks:
+        # only save good tracks
         is_good_tr , _ , _ = is_good_track(trk)
         if not is_good_tr:
             continue
+
         x0_val[0] = trk.x0
         y0_val[0] = trk.y0
         theta_val[0] = trk.theta
@@ -466,16 +482,30 @@ def create_ttree(root_file, tracks, method=""):
         hit_tr[0] = int(trk.hit_tr)
         in_acc[0] = int(trk.missing_in_acc)
         event_idx[0] = trk.event
+        d_sum[0] = trk.D_sum
+
+        # clear cluster vectors
+        #for i in range(max_clusters):
+        #    cl_x[i] = cl_y[i] = cl_z[i] = -999.
+        cl_x.clear()
+        cl_y.clear()
+        cl_z.clear()
+
+        for c in trk.clusters:
+            cl_x.push_back(c.mean_x)
+            cl_y.push_back(c.mean_y)
+            cl_z.push_back(c.mean_z)
+
         tree_out.Fill()
 
     tree_out.Write()
-    print("✅ TTree 'SelectedEvents' written.")
+    print(f"✅ TTree 'SelectedEvents{method}' written.")
 
 
 # ============================================================
 # Summary histogram creation
 # ============================================================
-def make_summary_hist(tracks, output_file, output_dir, method=""):
+def make_summary_hist(tracks, output_file, output_dir, base, method=""):
 
     print("\n📊 Building summary histogram...")
 
@@ -560,9 +590,9 @@ def make_summary_hist(tracks, output_file, output_dir, method=""):
     c_summary.SetBottomMargin(0.28)
     h_summary.SetFillColor(ROOT.kAzure - 4)
     h_summary.Draw("hist text0")
-    pdf_path = os.path.join(output_dir, f"summary_counts{method}.pdf")
-    c_summary.SaveAs(pdf_path)
-    c_summary.Write()
+    pdf_path = os.path.join(output_dir, f"{base}_summary_counts{method}.pdf")
+    #c_summary.SaveAs(pdf_path)
+    #c_summary.Write()
     print(f"\n💾 Saved summary canvas to: {pdf_path}")
     print("📂 Stored inside ROOT file.")
     print("✅ Summary histogram creation complete.\n")
@@ -595,16 +625,19 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
 
     # process analyze_event once and store into results
     results = [] # results is a list of dicts
-    for evt in arrays:
-        tracks_m1, clusters = analyze_event(evt, method="")
-        tracks_m2, _ = analyze_event(evt, method="_m2") # clusters are the same for both m1 and m2
 
-        results.append({
-            "m1": tracks_m1,
-            "m2": tracks_m2,
-            "clusters": clusters
-        })
+    with open("dsum1.txt", "w") as f1, open("dsum2.txt", "w") as f2:
 
+        for evt in arrays:
+            tracks_m1, clusters = analyze_event(evt, f1, method="")
+            tracks_m2, _ = analyze_event(evt, f2, method="_m2") # clusters are the same for both m1 and m2
+
+            results.append({
+                "m1": tracks_m1,
+                "m2": tracks_m2,
+                "clusters": clusters
+            })
+            
     os.makedirs(output_dir, exist_ok=True)
 
     base = os.path.splitext(os.path.basename(input_file))[0]
@@ -614,13 +647,15 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
     if(method == "both"):
         if(debug_all):
             txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_all.txt")
-            root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_all.root")
         else: 
-            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.txt")
-            root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.root")
+            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_diff.txt")
+        root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.root")
     else:
         txt_output = os.path.join(output_dir, f"{base}_selected{method}.txt")
         root_output = os.path.join(output_dir, f"{base}_selected{method}.root")
+
+    root_file = ROOT.TFile(root_output, "RECREATE")
+    root_file.cd()
 
     # Histograms
     dsum_edges = np.concatenate(
@@ -693,7 +728,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
             h_resy_m1, h_resy_m2,
             h_dsum_vs_ncls_m1, h_dsum_vs_ncls_m2,
             counters_m1, counters_m2,
-            debug_all,
+            debug_all, 
         )
 
         h_ncls_m1.Write()
@@ -745,7 +780,31 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         h_dsum_vs_ncls_m2.Write()
 
 
-    root_file = ROOT.TFile(root_output, "RECREATE")
+    # --- Copy MCtruth and radius from input file ---
+    input_root = ROOT.TFile(input_file, "READ")
+    root_file.cd()
+    print(f"\n📂 Copying MCTruth tree from input file to output ROOT file...")
+    mc_tree = input_root.Get("MCtruth")
+    if mc_tree is None:
+        raise RuntimeError(f"No MCtruth tree found in input file {input_file}")
+
+    if mc_tree:
+        mc_clone = mc_tree.CloneTree(-1, "fast")  # -1 = all the entries
+        mc_clone.Write()
+        print("✅ MCTruth tree copied to output ROOT file.")
+
+    radius_param = input_root.Get("radius")
+    if not radius_param:
+        raise RuntimeError("TParameter 'radius' not found in input file")
+    else:
+        radius_val = radius_param.GetVal()
+        root_file.cd()
+        radius_out = ROOT.TParameter('float')("radius", radius_val)
+        radius_out.Write()
+        print(f"✅ Radius {radius_val} saved into output file")
+
+    input_root.Close()
+
 
     # create tree for selected method
     if save_tree:
@@ -758,14 +817,16 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         elif method == "_m2":
             create_ttree(root_file, all_tracks_m2, method)    
 
+    
     # make summary hist for selected method
     if method == "both":
-        make_summary_hist(all_tracks_m1, root_file, output_dir, method="")
-        make_summary_hist(all_tracks_m2, root_file, output_dir, method="_m2")
+        make_summary_hist(all_tracks_m1, root_file, output_dir, base, method="")
+        make_summary_hist(all_tracks_m2, root_file, output_dir, base, method="_m2")
     elif method == "":
-        make_summary_hist(all_tracks_m1, root_file, output_dir, method)
+        make_summary_hist(all_tracks_m1, root_file, output_dir, base, method)
     elif method == "_m2":
-        make_summary_hist(all_tracks_m2, root_file, output_dir, method)
+        make_summary_hist(all_tracks_m2, root_file, output_dir, base, method)
+    
 
     root_file.Close()
 
@@ -777,30 +838,22 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
 # ============================================================
 if __name__ == "__main__":
 
-    # select masks to apply
-    masks_to_apply = {
-        "trig": False,
-        "trig_count": False,
-        "x0_multiplicity": False,
-        "x0_m2_multiplicity": False,
-    }
-
-    multiplicity_config = {
-        "x0_count": None,
-        "x0_m2_count": None,
-    }
-
     parser = argparse.ArgumentParser(description="Extract and analyze L2 events.")
     parser.add_argument("--input", required=True, help="Input file.")
     parser.add_argument("--output-dir", default="./output", help="Output directory. Default is ./output")
     parser.add_argument("--save-tree", action="store_true", help="Build TTree with tracks info.")
     parser.add_argument("--debug-all", action="store_true", help="Print all tracks into txt dump. Default: print differences between m1 and m2 methods.")
 
-    
     method_group = parser.add_mutually_exclusive_group() # either choose m1 or m2, no argument for both
     method_group.add_argument("--use-m2", action="store_true", help="Check for good tracks using only m2 method (default: use both).")
     method_group.add_argument("--use-m1", action="store_true", help="Check for good tracks using only m1 method (default: use both).")
     args = parser.parse_args()
+
+    # read masks from config
+    with open("config/config_check_hough.yaml", "r") as f_cfg:
+        config = yaml.safe_load(f_cfg)
+    masks_to_apply = config["masks_to_apply"]
+    multiplicity_config = config["multiplicity_config"]
 
     # choose applied method
     if (not args.use_m1) and (not args.use_m2):

@@ -2,6 +2,7 @@ import uproot
 import awkward as ak
 import numpy as np
 import math
+import os
 from geometry_utils import handle_two_cluster_track, track_hit_TR
 
 
@@ -163,7 +164,7 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
         }
 
         # --- Trigger mask ---
-        if masks_to_apply.get("trig", True):
+        if masks_to_apply.get("trig", False):
             trig_mask, n_trig = compute_trig_mask(tree)
             counters["trig"] = n_trig
             print(
@@ -172,7 +173,7 @@ def load_and_select_events(input_file, masks_to_apply=None, multiplicity_config=
             mask = mask & trig_mask
 
         # --- Trigger-count mask ---
-        if masks_to_apply.get("trig_count", True):
+        if masks_to_apply.get("trig_count", False):
             trig_count_mask, n_trig_count = compute_trig_count_mask(tree)
             counters["trig_count"] = n_trig_count
             print(
@@ -366,7 +367,7 @@ def get_all_clusters(evt):
     
     return all_cls
 
-def analyze_event(evt,method=""):
+def analyze_event(evt, f, method=""):
     """
     Restituisce una lista di Track (uno per ogni track_idx) e la lista di cluster per il dato evento.
 
@@ -402,13 +403,22 @@ def analyze_event(evt,method=""):
     if method == "":
 
         # --- Event-level quantities ---
-        x0_val = safe_first(evt[f"L2Event/x0"])
-        y0_val = safe_first(evt[f"L2Event/y0"])
-        theta_val = safe_first(evt[f"L2Event/theta"])
-        phi_val = safe_first(evt[f"L2Event/phi"])
+        #x0_val = safe_first(evt[f"L2Event/x0"])
+        #y0_val = safe_first(evt[f"L2Event/y0"])
+        #theta_val = safe_first(evt[f"L2Event/theta"])
+        #phi_val = safe_first(evt[f"L2Event/phi"])
+        x0_arr = list(evt[f"L2Event/x0"])
+        y0_arr = list(evt[f"L2Event/y0"])
+        theta_arr = list(evt[f"L2Event/theta"])
+        phi_arr = list(evt[f"L2Event/phi"])
 
-        theta_rad = math.radians(theta_val)
-        phi_rad = math.radians(phi_val)
+        #theta_rad = math.radians(theta_val)
+        #phi_rad = math.radians(phi_val)
+
+        if len(track_idx_list) != len(x0_arr):
+            print(f"⚠️ WARNING M1: Dimensions mismatch! "
+                  f"trk_idx={len(track_idx_list)}, x0_arr={len(x0_arr)}")
+            return [], all_cls
 
         cls_res_x = list(evt["L2Event/cls_res_x"])
         cls_res_y = list(evt["L2Event/cls_res_y"])
@@ -447,8 +457,16 @@ def analyze_event(evt,method=""):
                 )
             )
 
-        for ti in track_idx_list:
+        for i, ti in enumerate(track_idx_list):
             # clusters assigned to this track
+            x0_val = x0_arr[i] if i < len(x0_arr) else float("nan")
+            y0_val = y0_arr[i] if i < len(y0_arr) else float("nan")
+            theta_val = theta_arr[i] if i < len(theta_arr) else float("nan")
+            phi_val = phi_arr[i] if i < len(phi_arr) else float("nan")
+
+            theta_rad = math.radians(theta_val)
+            phi_rad = math.radians(phi_val)
+            
             cls_for_track = [c for c in clusters if c.track_idx == ti]
 
             if not cls_for_track: # skip tracks without clusters
@@ -503,23 +521,25 @@ def analyze_event(evt,method=""):
                     track_obj.x0, track_obj.y0, theta_rad, phi_rad
                 )
                 track_obj.missing_in_acc = False
+                f.write(f"{track_obj.D_sum}\n")
 
             # event selection 
-            if apply_cut_tr and apply_cut_acc:
-                # trigger and acceptance cuts
-                if track_obj.hit_tr and not track_obj.missing_in_acc:
+            if track_obj.D_sum < 10:
+                if apply_cut_tr and apply_cut_acc:
+                    # trigger and acceptance cuts
+                    if track_obj.hit_tr and not track_obj.missing_in_acc:
+                        track_list.append(track_obj)
+                elif apply_cut_tr and not apply_cut_acc:
+                    # trigger cut
+                    if track_obj.hit_tr:
+                        track_list.append(track_obj)
+                elif not apply_cut_tr and apply_cut_acc:
+                    # acceptance cut
+                    if not track_obj.missing_in_acc:
+                        track_list.append(track_obj)
+                else:
+                    # No cuts
                     track_list.append(track_obj)
-            elif apply_cut_tr and not apply_cut_acc:
-                # trigger cut
-                if track_obj.hit_tr:
-                    track_list.append(track_obj)
-            elif not apply_cut_tr and apply_cut_acc:
-                # acceptance cut
-                if not track_obj.missing_in_acc:
-                    track_list.append(track_obj)
-            else:
-                # No cuts
-                track_list.append(track_obj)
         
         return track_list, all_cls
 
@@ -656,6 +676,8 @@ def analyze_event(evt,method=""):
                     track_obj.x0, track_obj.y0, math.radians(theta_val), math.radians(phi_val)
                 )
                 track_obj.missing_in_acc = False
+                f.write(f"{track_obj.D_sum}\n")
+
 
             # event selection already applied during reconstruction for m2 (check if applied)
             if apply_cut_tr and apply_cut_acc:

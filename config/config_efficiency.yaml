@@ -1,0 +1,7 @@
+output_dir: /home/lattina/limadou/data/mc_sim/output/efficiency
+theta_min: -5.0
+theta_max: 95.0
+theta_step: 5.0
+phi_min: -185.0
+phi_max: 185.0
+phi_step: 18.5
