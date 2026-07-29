@@ -40,6 +40,8 @@ def merge_mc(f_in, output_file, num):
     event_index = ROOT.vector('int')()
     gen_theta = ROOT.vector('double')()
     gen_phi = ROOT.vector('double')()
+    gen_energy = ROOT.vector('double')()
+    mass = ROOT.vector('double')()
     
     # Vettori per cluster
     cluster_particle_id = ROOT.vector('int')()
@@ -60,6 +62,8 @@ def merge_mc(f_in, output_file, num):
     new_mc.Branch("particle_id", particle_id)
     new_mc.Branch("gen_theta", gen_theta)
     new_mc.Branch("gen_phi", gen_phi)
+    new_mc.Branch("gen_energy", gen_energy)
+    new_mc.Branch("Mass", mass)
     new_mc.Branch("cluster_particle_id", cluster_particle_id)
     new_mc.Branch("x_abspos", x_abspos)
     new_mc.Branch("y_abspos", y_abspos)
@@ -140,6 +144,8 @@ def merge_mc(f_in, output_file, num):
     tr2_posY_orig = ROOT.vector('double')()
     cls_to_trk_idx_orig = ROOT.vector('int')()
     event_index_orig = array.array('i', [0])  # int singolo
+    gen_energy_orig = ROOT.vector('double')()
+    mass_orig = ROOT.vector('double')()
 
 
     mc_tree.SetBranchAddress("gen_theta", gen_theta_orig)
@@ -154,6 +160,8 @@ def merge_mc(f_in, output_file, num):
     mc_tree.SetBranchAddress("TR2_posY", tr2_posY_orig)
     mc_tree.SetBranchAddress("cls_to_trk_idx", cls_to_trk_idx_orig)
     mc_tree.SetBranchAddress("event_index", event_index_orig)
+    mc_tree.SetBranchAddress("gen_energy", gen_energy_orig)
+    mc_tree.SetBranchAddress("Mass", mass_orig)
 
 
 
@@ -212,6 +220,8 @@ def merge_mc(f_in, output_file, num):
         event_index.clear()
         gen_theta.clear()
         gen_phi.clear()
+        gen_energy.clear()
+        mass.clear()
         cluster_particle_id.clear()
         x_abspos.clear()
         y_abspos.clear()
@@ -256,6 +266,8 @@ def merge_mc(f_in, output_file, num):
 
             gen_theta.push_back(gen_theta_orig[0])
             gen_phi.push_back(gen_phi_orig[0])
+            gen_energy.push_back(gen_energy_orig[0])
+            mass.push_back(mass_orig[0])
 
             n_cl = x_abspos_orig.size()
             clusters_per_event.append(n_cl)
@@ -317,7 +329,7 @@ def merge_mc(f_in, output_file, num):
             if cycle > max_cycle:
                 max_cycle = cycle
 
-    print(f"Ultimo ciclo trovato: MCtruth;{max_cycle}")
+    #print(f"Ultimo ciclo trovato: MCtruth;{max_cycle}")
 
     # Elimina tutti i cicli tranne l'ultimo
     for key in keys:
@@ -325,7 +337,7 @@ def merge_mc(f_in, output_file, num):
             cycle = key.GetCycle()
             if cycle != max_cycle:
                 f_out.Delete(f"MCtruth;{cycle}")
-                print(f"Eliminato MCtruth;{cycle}")
+                #print(f"Eliminato MCtruth;{cycle}")
 
     # Rinomina l'ultimo ciclo in MCtruth (senza numero)
     #mc_rename = f_out.Get(f"MCtruth;{max_cycle}")
@@ -359,7 +371,8 @@ def mctruth_gen_mask(output_file):
     with uproot.open(output_file) as f:
         mc_tree_uproot = f["MCtruth"]
         #gen_mask = np.ones(mc_tree_uproot.num_entries, dtype=bool)        
-        gen_mask = compute_gen_mask(mc_tree_uproot, [])  # Usa la tua funzione esistente
+        gen_mask = compute_gen_mask(mc_tree_uproot, [], verbose = True)  # Usa la tua funzione esistente
+        #gen_mask = 
     
     total_events = len(gen_mask)
     selected_events = np.sum(gen_mask)
@@ -417,7 +430,7 @@ def match_hit_to_cls(input_file, output_dir="../data/mc_sim/L1/", num=1):
     print(f"\nEvent number in input file: {tree_in.GetEntries()}")
 
     branches = [
-        "gen_theta", "gen_phi", 
+        "gen_theta", "gen_phi", "Mass", "gen_energy",
         "Hit_PosX", "Hit_PosY", "Hit_PosZ",
         "Hit_TrackId", "Hit_ParentId",
         "csize", "x_abspos", "y_abspos",

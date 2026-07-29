@@ -33,7 +33,7 @@ def get_th2_projection(histo, min_val, max_val, name, x_name, y_name, method, ou
     
     c_proj = ROOT.TCanvas(f"c_proj_{name}", "", 800, 700)
     
-    proj_title = (f"Projection of {y_name} on {x_name} in [{min_val}, {max_val}] - {method};{x_name} (deg);Entries")
+    proj_title = (f"Projection of {y_name} on {x_name} in [{min_val}, {max_val}] - {method};{x_name} [deg];Entries")
     
     h_proj.SetTitle(proj_title)
     h_proj.SetLineWidth(2)
@@ -75,6 +75,7 @@ def plot_correlation(x_vals, y_vals, x_name, y_name, method, output_dir,
         h2.Fill(x, y)
     
     c = ROOT.TCanvas(f"c_{hname}", "", 800, 700)
+    h2.GetYaxis().SetTitleOffset(1.4)
     h2.Draw("COLZ")
     
     corr_dir = os.path.join(output_dir, "correlations")
@@ -103,7 +104,7 @@ def plot_delta_hist(delta_vals, var_name, method, output_dir, color,
     ROOT.gStyle.SetStatFontSize(0.06)
 
     hname = f"h_delta_{var_name}_{method}"
-    title = f"#Delta#{var_name} distribution - {method} - {n_tracks_per_event} tracks per event;#Delta#{var_name} (deg);Entries"
+    title = f"#Delta#{var_name} distribution - {method} - {n_tracks_per_event} tracks per event;#Delta#{var_name} [deg];Entries"
     h = ROOT.TH1F(hname, title, nbins, xmin, xmax)
     
     for val in delta_vals:
@@ -125,7 +126,7 @@ def plot_delta_hist(delta_vals, var_name, method, output_dir, color,
         ROOT.gStyle.SetOptStat(0)
         ROOT.gStyle.SetOptFit(1111)
         
-        fit_range = 0.2 if var_name == "theta" else 0.4
+        fit_range = 0.5 if var_name == "theta" else 0.8
         fit_f = ROOT.TF1(f"gaus_fit_{var_name}_{method}", "gaus", -fit_range, fit_range)
         fit_f.SetLineColor(ROOT.kRed)
         fit_f.SetLineWidth(2)
@@ -166,15 +167,16 @@ def plot_overlapping_deltas(h_theta_m1, h_theta_m2, h_phi_m1, h_phi_m2, output_d
         
         h_theta_m1.SetTitle(f"#Delta#theta distribution - {n_tracks_per_event} tracks per event")
         h_theta_m1.SetMaximum(1.15 * ymax_th)
+        #h_theta_m1.GetXaxis().SetRangeUser(-25.0,25.0)
         h_theta_m1.SetLineColor(ROOT.kBlue)
         h_theta_m2.SetLineColor(ROOT.kRed)
         
         h_theta_m1.Draw("HIST")
         h_theta_m2.Draw("HIST SAME")
         
-        leg_th = ROOT.TLegend(0.78, 0.84, 0.95, 0.95)
-        leg_th.AddEntry(h_theta_m1, "M1", "lep")
-        leg_th.AddEntry(h_theta_m2, "M2", "lep")
+        leg_th = ROOT.TLegend(0.60, 0.79, 0.91, 0.91)
+        leg_th.AddEntry(h_theta_m1, f"M1 - Std. Dev: {h_theta_m1.GetStdDev():.2f}", "lep")
+        leg_th.AddEntry(h_theta_m2, f"M2 - Std. Dev: {h_theta_m2.GetStdDev():.2f}", "lep")
         leg_th.SetTextSize(0.04)
         leg_th.SetFillStyle(1001)
         leg_th.SetFillColor(ROOT.kWhite)
@@ -199,9 +201,9 @@ def plot_overlapping_deltas(h_theta_m1, h_theta_m2, h_phi_m1, h_phi_m2, output_d
         h_phi_m1.Draw("HIST")
         h_phi_m2.Draw("HIST SAME")
         
-        leg_ph = ROOT.TLegend(0.78, 0.84, 0.95, 0.95)
-        leg_ph.AddEntry(h_phi_m1, "M1", "lep")
-        leg_ph.AddEntry(h_phi_m2, "M2", "lep")
+        leg_ph = ROOT.TLegend(0.60, 0.79, 0.91, 0.91)
+        leg_ph.AddEntry(h_phi_m1, f"M1 - Std. Dev: {h_phi_m1.GetStdDev():.2f}", "lep")
+        leg_ph.AddEntry(h_phi_m2, f"M2 - Std. Dev: {h_phi_m2.GetStdDev():.2f}", "lep")
         leg_ph.SetTextSize(0.04)
         leg_ph.SetFillStyle(1001)
         leg_ph.SetFillColor(ROOT.kWhite)
@@ -240,10 +242,7 @@ def delta_plots(input_file, output_dir):
         "m2": {"delta_theta": [], "delta_phi": [], "gen_theta": [], "gen_phi": []}
     }
 
-    eff_info = {
-        "m1": {},
-        "m2": {}
-    }
+    eff_info, rec_info, eff_counters = initialize_counters(n_events, n_tracks_per_event, file_data)
 
     for m in ["m1", "m2"]:
         for ev_idx in range(n_events):
@@ -278,13 +277,17 @@ def delta_plots(input_file, output_dir):
                     file_data["rec_data"][method]["phi"][reco_idx],
                     file_data["gen_data"]["theta"][ev_idx],
                     file_data["gen_data"]["phi"][ev_idx],
+                    0,
                     #counters["m2"],
                     eff_info,
+                    rec_info,
+                    eff_counters,
                     theta_angle_threshold=5.0,
                     phi_angle_threshold=5.0,
                     return_good_flag=False,
                     return_delta=True,
-                    method=method
+                    method=method,
+                    dump=None
                 )
 
                 if result is not None:
@@ -330,41 +333,53 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
     """
     Create all correlation plots.
     """
+    theta_bins = 60
+    phi_bins = 60
+    theta_range = 10
+    phi_range = 10
     # Delta theta dist m1
     h_theta_m1 = plot_delta_hist(
         delta_data["m1"]["delta_theta"],
         "theta", "m1", output_dir, ROOT.kBlue,
-        delta_data["m1"]["delta_theta"].min(), 
-        delta_data["m1"]["delta_theta"].max(),
-        30, n_tracks_per_event, setlog=True, fit=False
+        -theta_range,#delta_data["m1"]["delta_theta"].min(), 
+        theta_range,#delta_data["m1"]["delta_theta"].max(),
+        theta_bins, n_tracks_per_event, setlog=False, fit=True
     )
+    #h_theta_m1.GetStdDev
+    print(f"h_theta_m1 std: {h_theta_m1.GetStdDev()}")
 
     # Delta theta dist m2
     h_theta_m2 = plot_delta_hist(
         delta_data["m2"]["delta_theta"],
         "theta", "m2", output_dir, ROOT.kRed,
-        delta_data["m2"]["delta_theta"].min(), 
-        delta_data["m2"]["delta_theta"].max(),
-        30, n_tracks_per_event, setlog=True, fit=False
+        -theta_range,#delta_data["m2"]["delta_theta"].min(), 
+        theta_range,#delta_data["m2"]["delta_theta"].max(),
+        theta_bins, n_tracks_per_event, setlog=False, fit=True
     )
+    print(f"h_theta_m2 std: {h_theta_m2.GetStdDev()}")
+
 
     # Delta phi dist m1
     h_phi_m1 = plot_delta_hist(        
         delta_data["m1"]["delta_phi"],
         "phi", "m1", output_dir, ROOT.kBlue,
-        delta_data["m1"]["delta_phi"].min(), 
-        delta_data["m1"]["delta_phi"].max(),
-        30, n_tracks_per_event, setlog=True, fit=False
+        -phi_range, #delta_data["m1"]["delta_phi"].min(), 
+        phi_range, #delta_data["m1"]["delta_phi"].max(),
+        phi_bins, n_tracks_per_event, setlog=False, fit=True
     )
+    print(f"h_phi_m1 std: {h_phi_m1.GetStdDev()}")
+
 
     # Delta phi dist m2
     h_phi_m2 = plot_delta_hist(        
         delta_data["m2"]["delta_phi"],
         "phi", "m2", output_dir, ROOT.kRed,
-        delta_data["m2"]["delta_phi"].min(), 
-        delta_data["m2"]["delta_phi"].max(),
-        30, n_tracks_per_event, setlog=True, fit=False
+        -phi_range, #delta_data["m2"]["delta_phi"].min(), 
+        phi_range, #delta_data["m2"]["delta_phi"].max(),
+        phi_bins, n_tracks_per_event, setlog=False, fit=True
     )
+    print(f"h_phi_m2 std: {h_phi_m2.GetStdDev()}")
+
 
     plot_overlapping_deltas(h_theta_m1, h_theta_m2, h_phi_m1, h_phi_m2, output_dir, n_tracks_per_event, setlog=True)
 
@@ -374,8 +389,8 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "theta", "delta_theta", "M1", output_dir,
         delta_data["m1"]["gen_theta"].min() if len(delta_data["m1"]["gen_theta"]) > 0 else 0,
         delta_data["m1"]["gen_theta"].max() if len(delta_data["m1"]["gen_theta"]) > 0 else 180,
-        60, -0.5, 0.5, 30, n_tracks_per_event,
-        f"#Delta#theta vs #theta_gen - M1 - {n_tracks_per_event} tracks per event;#theta_gen (deg);#Delta#theta (deg)"
+        60, -3*h_theta_m2.GetStdDev(), 3*h_theta_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#theta vs #theta_gen - M1 - {n_tracks_per_event} tracks per event;#theta_gen [deg];#Delta#theta [deg]"
     )
     
     plot_correlation(
@@ -383,8 +398,8 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "theta", "delta_theta", "M2", output_dir,
         delta_data["m2"]["gen_theta"].min() if len(delta_data["m2"]["gen_theta"]) > 0 else 0,
         delta_data["m2"]["gen_theta"].max() if len(delta_data["m2"]["gen_theta"]) > 0 else 180,
-        60, -0.5, 0.5, 30, n_tracks_per_event,
-        f"#Delta#theta vs #theta_gen - M2 - {n_tracks_per_event} tracks per event;#theta_gen (deg);#Delta#theta (deg)"
+        60, -3*h_theta_m2.GetStdDev(), 3*h_theta_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#theta vs #theta_gen - M2 - {n_tracks_per_event} tracks per event;#theta_gen [deg];#Delta#theta [deg]"
     )
     
     # Delta phi vs gen phi
@@ -393,8 +408,8 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "phi", "delta_phi", "M1", output_dir,
         delta_data["m1"]["gen_phi"].min() if len(delta_data["m1"]["gen_phi"]) > 0 else -180,
         delta_data["m1"]["gen_phi"].max() if len(delta_data["m1"]["gen_phi"]) > 0 else 180,
-        60, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #phi_fgen - M1 - {n_tracks_per_event} tracks per event;#phi_gen (deg);#Delta#phi (deg)"
+        60, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #phi_gen - M1 - {n_tracks_per_event} tracks per event;#phi_gen [deg];#Delta#phi [deg]"
     )
     
     plot_correlation(
@@ -402,8 +417,8 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "phi", "delta_phi", "M2", output_dir,
         delta_data["m2"]["gen_phi"].min() if len(delta_data["m2"]["gen_phi"]) > 0 else -180,
         delta_data["m2"]["gen_phi"].max() if len(delta_data["m2"]["gen_phi"]) > 0 else 180,
-        60, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #phi_gen - M2 - {n_tracks_per_event} tracks per event;#phi_gen (deg);#Delta#phi (deg)"
+        60, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #phi_gen - M2 - {n_tracks_per_event} tracks per event;#phi_gen [deg];#Delta#phi [deg]"
     )
     
     # Delta phi vs gen theta
@@ -412,8 +427,8 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "theta", "delta_phi", "M1", output_dir,
         delta_data["m1"]["gen_theta"].min() if len(delta_data["m1"]["gen_theta"]) > 0 else 0,
         delta_data["m1"]["gen_theta"].max() if len(delta_data["m1"]["gen_theta"]) > 0 else 180,
-        60, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #theta_gen - M1 - {n_tracks_per_event} tracks per event;#theta_gen (deg);#Delta#phi (deg)"
+        60, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #theta_gen - M1 - {n_tracks_per_event} tracks per event;#theta_gen [deg];#Delta#phi [deg]"
     )
     
     plot_correlation(
@@ -421,23 +436,23 @@ def create_all_plots(delta_data, output_dir, n_tracks_per_event):
         "theta", "delta_phi", "M2", output_dir,
         delta_data["m2"]["gen_theta"].min() if len(delta_data["m2"]["gen_theta"]) > 0 else 0,
         delta_data["m2"]["gen_theta"].max() if len(delta_data["m2"]["gen_theta"]) > 0 else 180,
-        60, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #theta_gen - M2 - {n_tracks_per_event} tracks per event;#theta_gen (deg);#Delta#phi (deg)"
+        60, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #theta_gen - M2 - {n_tracks_per_event} tracks per event;#theta_gen [deg];#Delta#phi [deg]"
     )
     
     # Delta phi vs delta theta
     plot_correlation(
         delta_data["m1"]["delta_theta"], delta_data["m1"]["delta_phi"],
         "delta_theta", "delta_phi", "M1", output_dir,
-        -0.5, 0.5, 30, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #Delta#theta - M1 - {n_tracks_per_event} tracks per event;#Delta#theta (deg);#Delta#phi (deg)"
+        -3*h_theta_m2.GetStdDev(), 3*h_theta_m2.GetStdDev(), 30, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #Delta#theta - M1 - {n_tracks_per_event} tracks per event;#Delta#theta [deg];#Delta#phi [deg]"
     )
     
     plot_correlation(
         delta_data["m2"]["delta_theta"], delta_data["m2"]["delta_phi"],
         "delta_theta", "delta_phi", "M2", output_dir,
-        -0.5, 0.5, 30, -1.5, 1.5, 30, n_tracks_per_event,
-        f"#Delta#phi vs #Delta#theta - M2 - {n_tracks_per_event} tracks per event;#Delta#theta (deg);#Delta#phi (deg)"
+        -3*h_theta_m2.GetStdDev(), 3*h_theta_m2.GetStdDev(), 30, -3*h_phi_m2.GetStdDev(), 3*h_phi_m2.GetStdDev(), 30, n_tracks_per_event,
+        f"#Delta#phi vs #Delta#theta - M2 - {n_tracks_per_event} tracks per event;#Delta#theta [deg];#Delta#phi [deg]"
     )
 
 

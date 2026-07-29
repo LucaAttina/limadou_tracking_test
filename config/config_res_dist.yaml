@@ -1,4 +1,4 @@
-output_dir: /home/lattina/limadou/data/mc_sim/output/res_dist
+output_dir: /home/lattina/limadou/data/mc_sim/output/efficiency
 theta_min: -5.0
 theta_max: 95.0
 theta_step: 5.0

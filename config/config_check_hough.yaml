@@ -6,6 +6,6 @@ masks_to_apply:
   mask_x0_multiplicity: False
   mask_x0_m2_multiplicity: False
 multiplicity_config:
-  x0_count: None
-  x0_m2_count: None
+  x0_count: null
+  x0_m2_count: null
 apply_multiplicity: False

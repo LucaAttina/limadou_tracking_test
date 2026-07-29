@@ -16,6 +16,84 @@ from geometry_utils import (
     handle_two_cluster_track,
 )
 
+
+def init_stats():
+    return {
+        'total_tracks': 0,
+        'n_cls_2': 0,
+        'n_cls_3': 0,
+        'n_cls_gt3': 0,
+        'hit_tr_true': 0,
+        'hit_tr_false': 0,
+        'missing_in_acc_true': 0,
+        'missing_in_acc_false': 0,
+        'dsum_lt100': 0,
+        'dsum_ge100': 0,
+        'passed_all': 0,
+        'rejected_by_tr': 0,
+        'rejected_by_acc': 0,
+        'rejected_by_dsum': 0,
+        'rejected_by_same_z': 0,
+        'rejected_by_multiple': 0,
+        'n_cls_2_hit_tr_true': 0,
+        'n_cls_2_hit_tr_false': 0,
+        'n_cls_2_missing_acc_false': 0,
+        'n_cls_2_missing_acc_true': 0,
+        'n_cls_2_good': 0,
+        'n_cls_3_hit_tr_true': 0,
+        'n_cls_3_hit_tr_false': 0,
+        'n_cls_3_dsum_lt100': 0,
+        'n_cls_3_dsum_ge100': 0,
+        'n_cls_3_good': 0,
+    }
+
+def print_stats(stats, method_name):
+    """Stampa le statistiche per un metodo."""
+    total = stats['total_tracks']
+    
+    if total == 0:
+        print(f"\n⚠️ No tracks for method {method_name}")
+        return
+    
+    print("\n" + "="*70)
+    print(f"📊 TRACK SELECTION STATISTICS - {method_name}")
+    print("="*70)
+    print(f"\nTotal tracks processed: {total}")
+    
+    print("\n🔴 BY NUMBER OF CLUSTERS:")
+    print(f"  • n_cls = 2:  {stats['n_cls_2']:6d} ({100*stats['n_cls_2']/total:5.1f}%)")
+    print(f"  • n_cls = 3:  {stats['n_cls_3']:6d} ({100*stats['n_cls_3']/total:5.1f}%)")
+    print(f"  • n_cls > 3:  {stats['n_cls_gt3']:6d} ({100*stats['n_cls_gt3']/total:5.1f}%)")
+    
+    if stats['n_cls_2'] > 0:
+        print("\n🟠 TRACKS WITH n_cls = 2:")
+        print(f"  • hit_TR = True:   {stats['n_cls_2_hit_tr_true']:6d} ({100*stats['n_cls_2_hit_tr_true']/stats['n_cls_2']:5.1f}% of n_cls=2)")
+        print(f"  • hit_TR = False:  {stats['n_cls_2_hit_tr_false']:6d} ({100*stats['n_cls_2_hit_tr_false']/stats['n_cls_2']:5.1f}% of n_cls=2)")
+        print(f"  • missing_in_acc = False: {stats['n_cls_2_missing_acc_false']:6d} ({100*stats['n_cls_2_missing_acc_false']/stats['n_cls_2']:5.1f}% of n_cls=2)")
+        print(f"  • missing_in_acc = True:  {stats['n_cls_2_missing_acc_true']:6d} ({100*stats['n_cls_2_missing_acc_true']/stats['n_cls_2']:5.1f}% of n_cls=2)")
+    
+    if stats['n_cls_3'] > 0:
+        print("\n🟡 TRACKS WITH n_cls = 3:")
+        print(f"  • hit_TR = True:   {stats['n_cls_3_hit_tr_true']:6d} ({100*stats['n_cls_3_hit_tr_true']/stats['n_cls_3']:5.1f}% of n_cls=3)")
+        print(f"  • hit_TR = False:  {stats['n_cls_3_hit_tr_false']:6d} ({100*stats['n_cls_3_hit_tr_false']/stats['n_cls_3']:5.1f}% of n_cls=3)")
+        print(f"  • D_sum < 100:     {stats['n_cls_3_dsum_lt100']:6d} ({100*stats['n_cls_3_dsum_lt100']/stats['n_cls_3']:5.1f}% of n_cls=3)")
+        print(f"  • D_sum >= 100:    {stats['n_cls_3_dsum_ge100']:6d} ({100*stats['n_cls_3_dsum_ge100']/stats['n_cls_3']:5.1f}% of n_cls=3)")
+    
+    print("\n🟢 REJECTION BREAKDOWN:")
+    print(f"  • Rejected by hit_TR = False:    {stats['rejected_by_tr']:6d} ({100*stats['rejected_by_tr']/total:5.1f}%)")
+    print(f"  • Rejected by missing_in_acc:    {stats['rejected_by_acc']:6d} ({100*stats['rejected_by_acc']/total:5.1f}%)")
+    print(f"  • Rejected by D_sum >= 100:      {stats['rejected_by_dsum']:6d} ({100*stats['rejected_by_dsum']/total:5.1f}%)")
+    print(f"  • Rejected by same_z:            {stats['rejected_by_same_z']:6d} ({100*stats['rejected_by_same_z']/total:5.1f}%)")
+    print(f"  • Rejected by multiple reasons:  {stats['rejected_by_multiple']:6d} ({100*stats['rejected_by_multiple']/total:5.1f}%)")
+    
+    print("\n✅ FINAL RESULT:")
+    print(f"  • Passed all cuts:  {stats['passed_all']:6d} ({100*stats['passed_all']/total:5.1f}%)")
+    if stats['n_cls_2'] > 0:
+        print(f"  • n_cls=2 good:     {stats['n_cls_2_good']:6d} ({100*stats['n_cls_2_good']/stats['n_cls_2']:5.1f}% of n_cls=2)")
+    if stats['n_cls_3'] > 0:
+        print(f"  • n_cls=3 good:     {stats['n_cls_3_good']:6d} ({100*stats['n_cls_3_good']/stats['n_cls_3']:5.1f}% of n_cls=3)")
+    print("="*70)
+
 ROOT.gStyle.SetOptStat(0)
 
 from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks, is_good_track
@@ -450,6 +528,8 @@ def create_ttree(root_file, tracks, method=""):
     cl_x = ROOT.vector('float')()
     cl_y = ROOT.vector('float')()
     cl_z = ROOT.vector('float')()
+    res_x = ROOT.vector('float')()
+    res_y = ROOT.vector('float')()
 
     tree_out.Branch(f"x0{method}", x0_val, "x0/F")
     tree_out.Branch(f"y0{method}", y0_val, "y0/F")
@@ -466,6 +546,8 @@ def create_ttree(root_file, tracks, method=""):
     tree_out.Branch("cl_x", cl_x)
     tree_out.Branch("cl_y", cl_y)
     tree_out.Branch("cl_z", cl_z)
+    tree_out.Branch("res_x", res_x)
+    tree_out.Branch("res_y", res_y)
     
     # One TTree entry per track
     for trk in tracks:
@@ -490,11 +572,14 @@ def create_ttree(root_file, tracks, method=""):
         cl_x.clear()
         cl_y.clear()
         cl_z.clear()
-
+        res_x.clear()
+        res_y.clear()
         for c in trk.clusters:
             cl_x.push_back(c.mean_x)
             cl_y.push_back(c.mean_y)
             cl_z.push_back(c.mean_z)
+            res_x.push_back(c.res_x)
+            res_y.push_back(c.res_y)
 
         tree_out.Fill()
 
@@ -601,7 +686,7 @@ def make_summary_hist(tracks, output_file, output_dir, base, method=""):
 # ============================================================
 # Main orchestrator
 # ============================================================
-def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_apply = None, multiplicity_config = None, method="", debug_all=False):
+def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_apply = None, multiplicity_config = None, method="", debug_all=False, mc_copy=False):
     load_geometry()
 
     if masks_to_apply is None:
@@ -623,20 +708,46 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         multiplicity_config=multiplicity_config,
     )
 
-    # process analyze_event once and store into results
-    results = [] # results is a list of dicts
+    
 
-    with open("dsum1.txt", "w") as f1, open("dsum2.txt", "w") as f2:
+    stats_m1_total = init_stats()
+    stats_m2_total = init_stats()
 
-        for evt in arrays:
-            tracks_m1, clusters = analyze_event(evt, f1, method="")
-            tracks_m2, _ = analyze_event(evt, f2, method="_m2") # clusters are the same for both m1 and m2
+    results = []
 
-            results.append({
-                "m1": tracks_m1,
-                "m2": tracks_m2,
-                "clusters": clusters
-            })
+    for i, evt in enumerate(arrays):
+        tracks_m1, clusters, stats_m1 = analyze_event(evt, i, method="hough")
+        tracks_m2, _, stats_m2 = analyze_event(evt, i, method="comb")
+
+        # Accumula statistiche per m1
+        for key in stats_m1_total:
+            stats_m1_total[key] += stats_m1.get(key, 0)
+
+        # Accumula statistiche per m2
+        for key in stats_m2_total:
+            stats_m2_total[key] += stats_m2.get(key, 0)
+
+        results.append({
+            "m1": tracks_m1,
+            "m2": tracks_m2,
+            "clusters": clusters
+        })
+
+    print_stats(stats_m1_total, "M1 (Hough)")
+    print_stats(stats_m2_total, "M2 (Combinatorial)")
+
+    # Opzionale: stampa anche un confronto diretto
+    print("\n" + "="*70)
+    print("📊 COMPARISON: M1 vs M2")
+    print("="*70)
+    print(f"{'Metric':<35} {'M1':>10} {'M2':>10} {'Diff':>10}")
+    print("-"*70)
+    print(f"{'Total tracks':<35} {stats_m1_total['total_tracks']:>10} {stats_m2_total['total_tracks']:>10} {stats_m2_total['total_tracks']-stats_m1_total['total_tracks']:>+10}")
+    print(f"{'Passed all cuts':<35} {stats_m1_total['passed_all']:>10} {stats_m2_total['passed_all']:>10} {stats_m2_total['passed_all']-stats_m1_total['passed_all']:>+10}")
+    print(f"{'n_cls=2 good':<35} {stats_m1_total['n_cls_2_good']:>10} {stats_m2_total['n_cls_2_good']:>10} {stats_m2_total['n_cls_2_good']-stats_m1_total['n_cls_2_good']:>+10}")
+    print(f"{'n_cls=3 good':<35} {stats_m1_total['n_cls_3_good']:>10} {stats_m2_total['n_cls_3_good']:>10} {stats_m2_total['n_cls_3_good']-stats_m1_total['n_cls_3_good']:>+10}")
+    print("="*70)
+        #print(f"Event {evt}: m1 tracks = {len(tracks_m1)}, {tracks_m1} - m2 tracks = {len(tracks_m2)}, {tracks_m2}")
             
     os.makedirs(output_dir, exist_ok=True)
 
@@ -781,29 +892,32 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
 
 
     # --- Copy MCtruth and radius from input file ---
-    input_root = ROOT.TFile(input_file, "READ")
-    root_file.cd()
-    print(f"\n📂 Copying MCTruth tree from input file to output ROOT file...")
-    mc_tree = input_root.Get("MCtruth")
-    if mc_tree is None:
-        raise RuntimeError(f"No MCtruth tree found in input file {input_file}")
-
-    if mc_tree:
-        mc_clone = mc_tree.CloneTree(-1, "fast")  # -1 = all the entries
-        mc_clone.Write()
-        print("✅ MCTruth tree copied to output ROOT file.")
-
-    radius_param = input_root.Get("radius")
-    if not radius_param:
-        raise RuntimeError("TParameter 'radius' not found in input file")
-    else:
-        radius_val = radius_param.GetVal()
+    if mc_copy:
+        input_root = ROOT.TFile(input_file, "READ")
         root_file.cd()
-        radius_out = ROOT.TParameter('float')("radius", radius_val)
-        radius_out.Write()
-        print(f"✅ Radius {radius_val} saved into output file")
+        print(f"\n📂 Copying MCTruth tree from input file to output ROOT file...")
+        mc_tree = input_root.Get("MCtruth")
+        if mc_tree is None:
+            raise RuntimeError(f"No MCtruth tree found in input file {input_file}")
 
-    input_root.Close()
+        if mc_tree:
+            mc_clone = mc_tree.CloneTree(-1, "fast")  # -1 = all the entries
+            mc_clone.Write()
+            print("✅ MCTruth tree copied to output ROOT file.")
+
+        radius_val = 0.25
+
+        #radius_param = input_root.Get("radius")
+        #if not radius_param:
+        #    raise RuntimeError("TParameter 'radius' not found in input file")
+        #else:
+        #    radius_val = radius_param.GetVal()
+        #    root_file.cd()
+        #    radius_out = ROOT.TParameter('float')("radius", radius_val)
+        #    radius_out.Write()
+        #    print(f"✅ Radius {radius_val} saved into output file")
+
+        input_root.Close()
 
 
     # create tree for selected method
@@ -843,6 +957,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", default="./output", help="Output directory. Default is ./output")
     parser.add_argument("--save-tree", action="store_true", help="Build TTree with tracks info.")
     parser.add_argument("--debug-all", action="store_true", help="Print all tracks into txt dump. Default: print differences between m1 and m2 methods.")
+    parser.add_argument("--mc",  action="store_true", help="If true, process MC data.")
 
     method_group = parser.add_mutually_exclusive_group() # either choose m1 or m2, no argument for both
     method_group.add_argument("--use-m2", action="store_true", help="Check for good tracks using only m2 method (default: use both).")
@@ -858,13 +973,13 @@ if __name__ == "__main__":
     # choose applied method
     if (not args.use_m1) and (not args.use_m2):
         print("\n --- Running both methods (default option) --- ")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both", debug_all=args.debug_all)
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both", debug_all=args.debug_all, mc_copy=args.mc)
     elif args.use_m1:
         print(f"\n --- Running m1 method ---")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="", debug_all=args.debug_all)
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="", debug_all=args.debug_all, mc_copy=args.mc)
     elif args.use_m2:
         print(f"\n --- Running m2 method ---")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="_m2", debug_all=args.debug_all)
+        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="_m2", debug_all=args.debug_all, mc_copy=args.mc)
 
 
 

@@ -473,7 +473,7 @@ def create_fake_rate_plots(n_tracks, fake_not_sh_list, err_fake_not_sh_list, fak
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Calculate efficiency / fake rate vs radius.")
+    parser = argparse.ArgumentParser(description="Calculate efficiency / fake rate vs ntracks.")
     parser.add_argument("--input-dir", required=True, 
                        help="Directory containing .root files.")
     parser.add_argument("--output-dir", default=None, 

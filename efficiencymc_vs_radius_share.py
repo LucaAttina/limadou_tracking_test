@@ -18,7 +18,7 @@ from efficiency_utils_new import (
     compute_gen_mask, 
     is_track_reconstructed
 )
-
+import re
 
 def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, phi_angle_threshold=5.0):
     """
@@ -40,8 +40,14 @@ def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, p
     f = uproot.open(fname)
     p = f.get("radius")
     if not p:
-        raise RuntimeError("TParameter 'radius' not found in file")
-    r_val = p.value
+        match = re.search(r"_r_0p(\d+)_", fname)
+
+        if match:
+            r_val = float("0." + match.group(1))
+        else:
+            raise RuntimeError("TParameter 'radius' not found in file")
+    else:
+        r_val = p.value
     
     # Read basic data using utility function
     file_data = read_data_from_file(f)
@@ -334,8 +340,8 @@ def plot_efficiency_vs_ntracks(input_dir, output_dir):
     #print(f"\nDetailed report saved to: {dump_path}")
     
     # Create plots
-    #create_efficiency_plots(radii, eff_not_sh_3cl_list, err_not_sh_3cl_list, eff_sh_3cl_list, err_sh_3cl_list, output_dir, n_tracks_per_event, miny=0.7, maxy=1.0, cl=3, s_str=s_str)
-    #create_efficiency_plots(radii, eff_not_sh_2cl_list, err_not_sh_2cl_list, eff_sh_2cl_list, err_sh_2cl_list, output_dir, n_tracks_per_event, miny=0.7, maxy=1.0, cl=2, s_str=s_str)
+    create_efficiency_plots(radii, eff_not_sh_3cl_list, err_not_sh_3cl_list, eff_sh_3cl_list, err_sh_3cl_list, output_dir, n_tracks_per_event, miny=0.7, maxy=1.0, cl=3, s_str=s_str)
+    create_efficiency_plots(radii, eff_not_sh_2cl_list, err_not_sh_2cl_list, eff_sh_2cl_list, err_sh_2cl_list, output_dir, n_tracks_per_event, miny=0.7, maxy=1.0, cl=2, s_str=s_str)
     create_fake_rate_plots(radii, fake_not_sh_3cl_list, err_fake_not_sh_3cl_list, fake_sh_3cl_list, err_fake_sh_3cl_list, output_dir, n_tracks_per_event, miny=-0.01, maxy=0.045, cl=3, s_str=s_str)
     create_fake_rate_plots(radii, fake_not_sh_2cl_list, err_fake_not_sh_2cl_list, fake_sh_2cl_list, err_fake_sh_2cl_list, output_dir, n_tracks_per_event, miny=-0.01, maxy=0.045, cl=2, s_str=s_str)
 
@@ -362,7 +368,7 @@ def create_efficiency_plots(radii, eff_not_sh_list, err_not_sh_list, eff_sh_list
     gr_ns.SetLineColor(ROOT.kBlue)
     gr_ns.SetMaximum(maxy)
     gr_ns.SetMinimum(miny)
-    gr_ns.SetTitle(f"Efficiency vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters;Radius (mm);Efficiency")
+    gr_ns.SetTitle(f"Efficiency vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters;Radius [mm];Efficiency")
     gr_ns.Draw("AP")
     gr_s = ROOT.TGraphErrors(n_points, np.array(radii, dtype='float64'), 
                         np.array(eff_sh_list, dtype='float64'), 
@@ -418,7 +424,8 @@ def create_fake_rate_plots(radii, fake_not_sh_list, err_fake_not_sh_list, fake_s
     gr_ns_f.SetLineColor(ROOT.kBlue)
     gr_ns_f.SetMaximum(maxy)
     gr_ns_f.SetMinimum(miny)
-    gr_ns_f.SetTitle(f"Fake Rate vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters;Radius (mm);Fake Rate")
+    gr_ns_f.SetTitle(f"Fake Rate vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters;Radius [mm];Fake Rate")
+    gr_ns_f.GetYaxis().SetTitleOffset(1.2)
     gr_ns_f.Draw("AP")
     gr_s_f = ROOT.TGraphErrors(n_points, np.array(radii, dtype='float64'), 
                         np.array(fake_sh_list, dtype='float64'), 

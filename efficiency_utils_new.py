@@ -12,16 +12,30 @@ def compute_gen_mask(tree_gen, gen_mask):
     tr1y = tree_gen["TR1_posY"].array()
     tr2x = tree_gen["TR2_posX"].array()
     tr2y = tree_gen["TR2_posY"].array() 
-    csize = tree_gen["csize"].array()  
-    cl_layer = tree_gen["cl_layer"].array()
-    cls_idx = tree_gen["cls_to_trk_idx"].array()
+    #csize = tree_gen["csize"].array()  
+    #cl_layer = tree_gen["cl_layer"].array()
+    #cls_idx = tree_gen["cls_to_trk_idx"].array()
 
-    for i, (x1, y1, x2, y2, c, lay, cid) in enumerate(zip(tr1x, tr1y, tr2x, tr2y, csize, cl_layer, cls_idx)):
+    #for i, (x1, y1, x2, y2, c, lay, cid) in enumerate(zip(tr1x, tr1y, tr2x, tr2y, csize, cl_layer, cls_idx)):
+    for i, (x1, y1, x2, y2) in enumerate(zip(tr1x, tr1y, tr2x, tr2y)):
 
+        '''
         # clusters condition
         if ak.count_nonzero(c, axis=0) < 2:
             gen_mask.append(False)
             continue
+
+        if len(set(tuple(lay))) < 2:
+            #print(f"{lay}")
+            gen_mask.append(False)
+            continue
+        
+        mc_cls_num = sum(1 for x in cid if x != -999)
+        if mc_cls_num < 2:
+            #print(f"mc_cls_num: {mc_cls_num}")
+            gen_mask.append(False)
+            continue 
+            '''
             
         # TR conditions
         if not ak.any(x1 != -999, axis=0):
@@ -39,24 +53,213 @@ def compute_gen_mask(tree_gen, gen_mask):
         if not ak.any(y2 != -999, axis=0):
             gen_mask.append(False)
             continue
-
-        if len(set(tuple(lay))) < 2:
-            print(f"{lay}")
-            gen_mask.append(False)
-            continue
-
-        mc_cls_num = sum(1 for x in cid if x != -999)
-        if mc_cls_num < 2:
-            print(f"mc_cls_num: {mc_cls_num}")
-            gen_mask.append(False)
-            continue 
-       
-        
+                
         # if all conditions are true
         gen_mask.append(True)   
     
     return gen_mask
-
+    
+'''
+def compute_gen_mask(tree_gen, gen_mask, verbose=True):
+    """
+    Consider event if at least 2 cluster with size > 0 and the tracks hit all triggers.
+    """
+    tr1x = tree_gen["TR1_posX"].array()
+    tr1y = tree_gen["TR1_posY"].array()
+    tr2x = tree_gen["TR2_posX"].array()
+    tr2y = tree_gen["TR2_posY"].array() 
+    csize = tree_gen["csize"].array()  
+    cl_layer = tree_gen["cl_layer"].array()
+    cls_idx = tree_gen["cls_to_trk_idx"].array()
+    
+    # Statistiche dettagliate per ogni singolo taglio
+    stats = {
+        'total': 0,
+        'passed_TR': 0,
+        'passed_all': 0,
+        # Trigger cuts (singoli)
+        'failed_TR1X': 0,
+        'failed_TR1Y': 0,
+        'failed_TR2X': 0,
+        'failed_TR2Y': 0,
+        # Cluster cuts (singoli) - a livello di eventi
+        'failed_cluster_count': 0,
+        'failed_cluster_layers': 0,
+        'failed_mc_clusters': 0,
+        # Totali per step
+        'failed_TR_total': 0,
+        'failed_cluster_total': 0,
+        # Track-level counters for cluster cuts (INDIPENDENTEMENTE dai TR)
+        'tracks_failed_cluster_count': 0,
+        'tracks_failed_cluster_layers': 0,
+        'tracks_failed_mc_clusters': 0,
+        'total_tracks': 0,  # totale tracce in tutti gli eventi
+    }
+    
+    for i, (x1, y1, x2, y2, c, lay, cid) in enumerate(zip(tr1x, tr1y, tr2x, tr2y, csize, cl_layer, cls_idx)):
+        
+        stats['total'] += 1
+        
+        # Conto il numero di tracce per questo evento
+        n_tracks = len(c) if hasattr(c, '__len__') else 0
+        stats['total_tracks'] += n_tracks
+        
+        # ========================================
+        # STEP 1: TRIGGER CUTS (in sequenza)
+        # ========================================
+        tr_ok = True
+        
+        # TR1_X
+        if not ak.any(x1 != -999, axis=0):
+            stats['failed_TR1X'] += 1
+            tr_ok = False
+        
+        # TR1_Y (solo se non è già fallito)
+        if tr_ok and not ak.any(y1 != -999, axis=0):
+            stats['failed_TR1Y'] += 1
+            tr_ok = False
+        
+        # TR2_X
+        if tr_ok and not ak.any(x2 != -999, axis=0):
+            stats['failed_TR2X'] += 1
+            tr_ok = False
+        
+        # TR2_Y
+        if tr_ok and not ak.any(y2 != -999, axis=0):
+            stats['failed_TR2Y'] += 1
+            tr_ok = False
+        
+        # ========================================
+        # CLUSTER CUTS (valutati SEMPRE, indipendentemente dai TR)
+        # ========================================
+        cluster_ok = True
+        
+        # 2a: Almeno 2 cluster
+        n_clusters = ak.count_nonzero(c, axis=0)
+        if n_clusters < 2:
+            stats['failed_cluster_count'] += 1
+            stats['tracks_failed_cluster_count'] += n_tracks
+            cluster_ok = False
+        
+        # 2b: Almeno 2 layer diversi (solo se non è già fallito)
+        if cluster_ok and len(set(tuple(lay))) < 2:
+            stats['failed_cluster_layers'] += 1
+            stats['tracks_failed_cluster_layers'] += n_tracks
+            cluster_ok = False
+        
+        # 2c: Almeno 2 cluster matched a tracks (solo se non è già fallito)
+        if cluster_ok:
+            mc_cls_num = sum(1 for x in cid if x != -999)
+            if mc_cls_num < 2:
+                stats['failed_mc_clusters'] += 1
+                stats['tracks_failed_mc_clusters'] += n_tracks
+                cluster_ok = False
+        
+        # ========================================
+        # ORA APPLICHIAMO LA LOGICA DI SELEZIONE
+        # ========================================
+        
+        # Se non passa i TR, scartato
+        if not tr_ok:
+            stats['failed_TR_total'] += 1
+            gen_mask.append(False)
+            continue
+        
+        # Se non passa i cluster, scartato
+        if not cluster_ok:
+            stats['failed_cluster_total'] += 1
+            gen_mask.append(False)
+            continue
+        
+        # ========================================
+        # STEP 3: TRIGGER CHECK (originale - già passati)
+        # ========================================
+        if not ak.any(x1 != -999, axis=0):
+            gen_mask.append(False)
+            continue
+        
+        if not ak.any(y1 != -999, axis=0):
+            gen_mask.append(False)
+            continue
+            
+        if not ak.any(x2 != -999, axis=0):
+            gen_mask.append(False)
+            continue
+            
+        if not ak.any(y2 != -999, axis=0):
+            gen_mask.append(False)
+            continue
+                
+        # if all conditions are true
+        gen_mask.append(True)
+        stats['passed_all'] += 1
+    
+    if verbose:
+        total = stats['total']
+        passed_TR = stats['passed_TR']
+        passed_all = stats['passed_all']
+        failed_TR_total = stats['failed_TR_total']
+        failed_cluster_total = stats['failed_cluster_total']
+        total_tracks = stats['total_tracks']
+        
+        print("\n" + "="*70)
+        print("📊 EVENT SELECTION STATISTICS (Sequential Cuts)")
+        print("="*70)
+        print(f"Total events processed:                    {total}")
+        print(f"Total tracks in all events:                {total_tracks}")
+        print("-"*70)
+        
+        # STEP 1: Trigger cuts - singoli tagli
+        print("\n🔴 STEP 1 - TRIGGER CUTS (applied sequentially):")
+        print(f"  • Failed TR1_X:        {stats['failed_TR1X']:6d} ({100*stats['failed_TR1X']/total:5.1f}%)")
+        print(f"  • Failed TR1_Y:        {stats['failed_TR1Y']:6d} ({100*stats['failed_TR1Y']/total:5.1f}%)")
+        print(f"  • Failed TR2_X:        {stats['failed_TR2X']:6d} ({100*stats['failed_TR2X']/total:5.1f}%)")
+        print(f"  • Failed TR2_Y:        {stats['failed_TR2Y']:6d} ({100*stats['failed_TR2Y']/total:5.1f}%)")
+        print(f"  ✅ Passed TR cuts:     {passed_TR:6d} ({100*passed_TR/total:5.1f}%)")
+        print(f"  ❌ Total lost at TR:   {failed_TR_total:6d} ({100*failed_TR_total/total:5.1f}%)")
+        
+        # STEP 2: Cluster cuts - singoli tagli (su TUTTI gli eventi)
+        print("\n🟠 STEP 2 - CLUSTER CUTS (applied on ALL events, independent of TR):")
+        print(f"  • Failed < 2 clusters:         {stats['failed_cluster_count']:6d} ({100*stats['failed_cluster_count']/total:5.1f}% of all events)")
+        print(f"  • Failed < 2 layers:           {stats['failed_cluster_layers']:6d} ({100*stats['failed_cluster_layers']/total:5.1f}% of all events)")
+        print(f"  • Failed < 2 MC matched cls:   {stats['failed_mc_clusters']:6d} ({100*stats['failed_mc_clusters']/total:5.1f}% of all events)")
+        
+        # Track-level statistics for cluster cuts (su TUTTE le tracce)
+        print("\n📈 TRACK-LEVEL LOSSES DUE TO CLUSTER CUTS (on all tracks):")
+        print(f"  • Tracks in events with < 2 clusters:       {stats['tracks_failed_cluster_count']:6d} ({100*stats['tracks_failed_cluster_count']/total_tracks:5.1f}% of all tracks)")
+        print(f"  • Tracks in events with < 2 layers:         {stats['tracks_failed_cluster_layers']:6d} ({100*stats['tracks_failed_cluster_layers']/total_tracks:5.1f}% of all tracks)")
+        print(f"  • Tracks in events with < 2 MC matched:     {stats['tracks_failed_mc_clusters']:6d} ({100*stats['tracks_failed_mc_clusters']/total_tracks:5.1f}% of all tracks)")
+        
+        # Totale tracce perse per cluster (attenzione: overlap tra i tre tagli!)
+        tracks_lost_unique = len(set(
+            [i for i in range(total) if ...]  # non possiamo facilmente fare unique qui
+        ))
+        # Invece calcoliamo il totale degli eventi persi per cluster
+        tracks_in_cluster_failed_events = stats['tracks_failed_cluster_count']  # approx
+        
+        print(f"  • Total tracks in events failing cluster cuts: {tracks_in_cluster_failed_events:6d} ({100*tracks_in_cluster_failed_events/total_tracks:5.1f}% of all tracks)")
+        
+        # STEP 3: Eventi che passano cluster (indipendentemente dai TR)
+        events_passed_cluster = total - stats['failed_cluster_count']
+        print(f"\n🟡 Events passing cluster cuts (regardless of TR): {events_passed_cluster:6d} ({100*events_passed_cluster/total:5.1f}%)")
+        
+        # STEP 4: Final result
+        print(f"\n🟢 FINAL RESULT (events passing ALL cuts):")
+        print(f"  ✅ Passed ALL cuts:  {passed_all:6d} ({100*passed_all/total:5.1f}%)")
+        print(f"  ❌ Total rejected:   {total-passed_all:6d} ({100*(total-passed_all)/total:5.1f}%)")
+        
+        # SUMMARY
+        print("\n" + "="*70)
+        print("📌 SUMMARY:")
+        print(f"  • {failed_TR_total} events rejected by TR cuts")
+        print(f"  • {failed_cluster_total} events rejected by cluster cuts (after passing TR)")
+        print(f"  • {stats['failed_cluster_count']} events fail cluster cuts (regardless of TR)")
+        print(f"  • {passed_all} events passed all cuts")
+        print(f"  • {tracks_in_cluster_failed_events} tracks are in events that fail cluster cuts")
+        print("="*70)
+    
+    return gen_mask
+    '''
 
 
 def get_bins(var_name, config):
@@ -194,6 +397,8 @@ def read_data_from_file(file):
     gen_theta = trees["gen"]["gen_theta"].array()
     gen_phi = trees["gen"]["gen_phi"].array()
     p_id = trees["gen"]["particle_id"].array()
+    gen_energy = trees["gen"]["gen_energy"].array()
+    mass = trees["gen"]["Mass"].array()
     
     #print(f"  - gen_theta type: {type(gen_theta)}")
     #print(f"  - gen_theta length: {len(gen_theta)}")
@@ -248,6 +453,8 @@ def read_data_from_file(file):
     rec_m1_cls_y = trees["rec_m1"]["cl_y"].array()
     rec_m1_cls_z = trees["rec_m1"]["cl_z"].array()
     d_sum_m1 = trees["rec_m1"]["d_sum"].array()
+    res_x_m1 = trees["rec_m1"]["res_x"].array() 
+    res_y_m1 = trees["rec_m1"]["res_y"].array() 
     
     #print(f"  - rec_m1_cls_x length: {len(rec_m1_cls_x)}")
     #if len(rec_m1_cls_x) > 0:
@@ -279,6 +486,8 @@ def read_data_from_file(file):
     rec_m2_cls_y = trees["rec_m2"]["cl_y"].array()
     rec_m2_cls_z = trees["rec_m2"]["cl_z"].array()
     d_sum_m2 = trees["rec_m2"]["d_sum"].array()
+    res_x_m2 = trees["rec_m2"]["res_x"].array()
+    res_y_m2 = trees["rec_m2"]["res_y"].array()
 
     
     #print(f"  - rec_m2_cls_x length: {len(rec_m2_cls_x)}")
@@ -322,20 +531,24 @@ def read_data_from_file(file):
                 "phi": rec_m1_phi,
                 "event_idx": rec_m1_event_idx,
                 "d_sum": d_sum_m1,
-                "cls": {"x": rec_m1_cls_x, "y": rec_m1_cls_y, "z": rec_m1_cls_z}
+                "cls": {"x": rec_m1_cls_x, "y": rec_m1_cls_y, "z": rec_m1_cls_z},
+                "res": {"x": res_x_m1, "y": res_y_m1}
             },
             "m2": {
                 "theta": rec_m2_theta,
                 "phi": rec_m2_phi,
                 "event_idx": rec_m2_event_idx,
                 "d_sum": d_sum_m2,
-                "cls": {"x": rec_m2_cls_x, "y": rec_m2_cls_y, "z": rec_m2_cls_z}
+                "cls": {"x": rec_m2_cls_x, "y": rec_m2_cls_y, "z": rec_m2_cls_z},
+                "res": {"x": res_x_m2, "y": res_y_m2}
             }
         },
         "gen_data": {
             "trk_id": p_id,
             "theta": gen_theta,
             "phi": gen_phi,
+            "energy": gen_energy,
+            "mass": mass,
             "cls": {
                 "x": gen_cls_x,
                 "y": gen_cls_y,
@@ -356,11 +569,12 @@ def read_data_from_file(file):
 
 
 def is_track_reconstructed(ev_idx, method, rec_cl_x, rec_cl_y, rec_cl_z, mc_cl_x, mc_cl_y, mc_cl_layer, 
-                           cls_to_trk, n_tracks, reco_trk_idx, dump=None, tol=1.0, debug=False):
+                           cls_to_trk, n_tracks, reco_trk_idx, dump=None, tol=0.1, debug=False):
     """
     Versione con assegnazione esclusiva dei cluster ricostruiti.
     Ogni cluster ricostruito può essere usato al massimo una volta.
     """
+    delta = 0
     #if ev_idx == 0 or ev_idx == 100 or ev_idx == 158 or ev_idx == 562 or ev_idx == 573:
     #    debug = True
     if dump is not None:
@@ -450,6 +664,7 @@ def is_track_reconstructed(ev_idx, method, rec_cl_x, rec_cl_y, rec_cl_z, mc_cl_x
                 # Verifica match
                 layer_match = (lay == mc_cl_layer[mc_idx])
                 dist = (mc_cl_x[mc_idx] - cx) * (mc_cl_x[mc_idx] - cx) + (mc_cl_y[mc_idx] - cy) * (mc_cl_y[mc_idx] - cy)
+                dist = np.sqrt(dist)
                 r_match = dist <= tol 
                 #x_match = abs(mc_cl_x[mc_idx] - cx) <= tol
                 #y_match = abs(mc_cl_y[mc_idx] - cy) <= tol
@@ -471,6 +686,7 @@ def is_track_reconstructed(ev_idx, method, rec_cl_x, rec_cl_y, rec_cl_z, mc_cl_x
         
         if dump is not None:
             dump.write(f"\n\n  Results for MC track {track_id}: {n_matched} match / {len(mc_indices)} MC clusters")
+
         #if matched_pairs:
         #    if dump is not None:
         #        dump.write(f"  Match specifici: {matched_pairs}")
@@ -537,6 +753,7 @@ def process_efficiency_event(n_tracks_per_event, ev_idx, reco_trk_idx, gen_trk_i
         If return_good_flag: bool indicating if track is good for efficiency
         Otherwise: None
     """
+    delta_count = 0
 
     theta_angle_mismatch = np.zeros(n_tracks_per_event, dtype=bool)
     phi_angle_mismatch = np.zeros(n_tracks_per_event, dtype=bool)
@@ -588,22 +805,12 @@ def process_efficiency_event(n_tracks_per_event, ev_idx, reco_trk_idx, gen_trk_i
             mc_cl_x, mc_cl_y, mc_cl_layer, cls_to_trk, 
             n_tracks_per_event, reco_trk_idx, dump, debug=debug
         )
+        #print(f"delta count = {delta_count}")
             
         #print(method)
         gen_id = []
         rec_id = []
         #eff_counters[method]["tot_reco"] += mult_value
-        
-        #mc_cls = sum(1 for x in cls_to_trk if x != -999)
-        #eff_counters["mc"]["tot"] += 1
-        #if mc_cls == 2:
-        #    eff_counters["mc"]["2cl"] += 1
-        #elif mc_cls == 3:
-        #    eff_counters["mc"]["3cl"] += 1
-        #else:
-        #    print(f"ev_ {ev_idx}: WARNING: {mc_cls}")
-        #print(f"reco_trk_idx: {reco_trk_idx}")
-        #print(f"mult: {mult_value}")
 
 
         '''
@@ -649,6 +856,8 @@ def process_efficiency_event(n_tracks_per_event, ev_idx, reco_trk_idx, gen_trk_i
                     eff_counters[method]["eff"]["2cl_rec_gen"] += 1
                 elif mc_cls_m == 3:
                     eff_counters[method]["eff"]["3cl_rec_gen"] += 1
+                else:
+                    print(f"ev_ {ev_idx}: WARNING: {mc_cls_m} clusters for track {trk_idx}")
 
 
         for reco_id in range(mult_value):
@@ -661,6 +870,11 @@ def process_efficiency_event(n_tracks_per_event, ev_idx, reco_trk_idx, gen_trk_i
 
             if reco_id in matched_reco_id:
                 rec_info[method][ev_idx][reco_id] = True
+                eff_counters[method]["fake"]["good_tot_rec"] += 1
+                if n_cls == 3:
+                    eff_counters[method]["fake"]["good_3cl_rec"] += 1
+                else:
+                    eff_counters[method]["fake"]["good_2cl_rec"] += 1
             else:
                 eff_counters[method]["fake"]["tot_fake"] += 1
                 if n_cls == 3:
@@ -788,7 +1002,6 @@ def process_efficiency_event(n_tracks_per_event, ev_idx, reco_trk_idx, gen_trk_i
     #print(f"eff_info[method][ev_idx]: {eff_info[method][ev_idx]}\n")
 
 
-
     #if return_good_flag:
         # Ritorna lista di booleani per ogni MC track
     return eff_info[method][ev_idx], reco_to_gen, n_fake, fake_id, np.array(diff_theta_list), np.array(diff_phi_list), np.array(gen_theta_list), np.array(gen_phi_list)
@@ -858,11 +1071,11 @@ def make_efficiency_hist(var_name, rec_m1_flat, rec_m2_flat, gen_flat, bins, n_t
     
     # Create histograms
     h_rec_m1 = ROOT.TH1F(f"h_rec_{var_name}_m1", 
-                         f"Reconstructed tracks VS #{var_name} - M1 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         f"Reconstructed tracks VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                          n_bins, bins_array)
     
     h_rec_m2 = ROOT.TH1F(f"h_rec_{var_name}_m2", 
-                         f"Reconstructed tracks VS #{var_name} - M2 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         f"Reconstructed tracks VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                          n_bins, bins_array)
     
     h_gen = ROOT.TH1F(f"h_gen_{var_name}", 
@@ -880,11 +1093,11 @@ def make_efficiency_hist(var_name, rec_m1_flat, rec_m2_flat, gen_flat, bins, n_t
     # Create efficiency histograms
     h_eff_m1 = h_rec_m1.Clone(f"h_eff_{var_name}_m1")
     h_eff_m1.Divide(h_rec_m1, h_gen, 1.0, 1.0, "B")  # binomial errors
-    h_eff_m1.SetTitle(f"Tracking Efficiency VS #{var_name} - M1 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Efficiency")
+    h_eff_m1.SetTitle(f"Tracking Efficiency VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Efficiency")
     
     h_eff_m2 = h_rec_m2.Clone(f"h_eff_{var_name}_m2")
     h_eff_m2.Divide(h_rec_m2, h_gen, 1.0, 1.0, "B")  # binomial errors
-    h_eff_m2.SetTitle(f"Tracking Efficiency VS #{var_name} - M2 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Efficiency")
+    h_eff_m2.SetTitle(f"Tracking Efficiency VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Efficiency")
     
     return h_rec_m1, h_rec_m2, h_gen, h_eff_m1, h_eff_m2
 
@@ -896,13 +1109,14 @@ def make_fake_hist(var_name, fake_m1_flat, fake_m2_flat, all_reco_m1_flat, all_r
     
     Args:
         var_name: variable name ("theta" or "phi")
-        rec_m1_flat: flattened array of M1 reconstructed values
-        rec_m2_flat: flattened array of M2 reconstructed values
-        gen_flat: flattened array of generated values
+        fake_m1_flat: flattened array of M1 fake values
+        fake_m2_flat: flattened array of M2 fake values
+        all_reco_m1_flat: flattened array of all M1 reconstructed values
+        all_reco_m2_flat: flattened array of all M2 reconstructed values
         bins: array of bin edges
     
     Returns:
-        tuple: (h_rec_m1, h_rec_m2, h_gen, h_eff_m1, h_eff_m2)
+        tuple: (h_fake_ratio_m1, h_fake_ratio_m2)
     """
     # Convert bins to numpy array if needed
     bins_array = np.array(bins)
@@ -910,19 +1124,19 @@ def make_fake_hist(var_name, fake_m1_flat, fake_m2_flat, all_reco_m1_flat, all_r
     
     # Create histograms
     h_all_rec_m1 = ROOT.TH1F(f"h_all_rec_{var_name}_m1", 
-                         f"All Reconstructed tracks VS #{var_name} - M1 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         f"All Reconstructed tracks VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                          n_bins, bins_array)
     
     h_all_rec_m2 = ROOT.TH1F(f"h_all_rec_{var_name}_m2", 
-                         f"All Reconstructed tracks VS #{var_name} - M2 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         f"All Reconstructed tracks VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                          n_bins, bins_array)
     
     h_fake_m1 = ROOT.TH1F(f"h_fake_{var_name}_m1", 
-                      f"Fake tracks VS #{var_name} - M1 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                      f"Fake tracks VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                       n_bins, bins_array)
     
     h_fake_m2 = ROOT.TH1F(f"h_fake_{var_name}_m2", 
-                      f"Fake tracks VS #{var_name} - M2 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                      f"Fake tracks VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
                       n_bins, bins_array)
     
     # Fill histograms
@@ -938,13 +1152,71 @@ def make_fake_hist(var_name, fake_m1_flat, fake_m2_flat, all_reco_m1_flat, all_r
     # Create efficiency histograms
     h_fake_ratio_m1 = h_all_rec_m1.Clone(f"h_fake_ratio_{var_name}_m1")
     h_fake_ratio_m1.Divide(h_fake_m1, h_all_rec_m1, 1.0, 1.0, "B")  # binomial errors
-    h_fake_ratio_m1.SetTitle(f"Fake Track Ratio VS #{var_name} - M1 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Fake Ratio")
+    h_fake_ratio_m1.SetTitle(f"Fake Track Ratio VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Fake Ratio")
     
     h_fake_ratio_m2 = h_all_rec_m2.Clone(f"h_fake_ratio_{var_name}_m2")
     h_fake_ratio_m2.Divide(h_fake_m2, h_all_rec_m2, 1.0, 1.0, "B")  # binomial errors
-    h_fake_ratio_m2.SetTitle(f"Fake Track Ratio VS #{var_name} - M2 - {n_tracks_per_event} tracks per event;#{var_name} (deg);Fake Ratio")
+    h_fake_ratio_m2.SetTitle(f"Fake Track Ratio VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Fake Ratio")
     
     return h_fake_ratio_m1, h_fake_ratio_m2
+
+
+def make_purity_hist(var_name, tp_m1_flat, tp_m2_flat, all_reco_m1_flat, all_reco_m2_flat, bins, n_tracks_per_event):
+    """
+    Create purity histograms for theta or phi.
+    
+    Args:
+        var_name: variable name ("theta" or "phi")
+        tp_m1_flat: flattened array of M1 true positive values
+        tp_m2_flat: flattened array of M2 true positive values
+        all_reco_m1_flat: flattened array of all M1 reconstructed values
+        all_reco_m2_flat: flattened array of all M2 reconstructed values
+        bins: array of bin edges
+    
+    Returns:
+        tuple: (h_fake_ratio_m1, h_fake_ratio_m2)
+    """
+    # Convert bins to numpy array if needed
+    bins_array = np.array(bins)
+    n_bins = len(bins_array) - 1
+    
+    # Create histograms
+    h_all_rec_m1 = ROOT.TH1F(f"h_all_rec_{var_name}_m1", 
+                         f"All Reconstructed tracks VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         n_bins, bins_array)
+    
+    h_all_rec_m2 = ROOT.TH1F(f"h_all_rec_{var_name}_m2", 
+                         f"All Reconstructed tracks VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                         n_bins, bins_array)
+    
+    h_fake_m1 = ROOT.TH1F(f"h_fake_{var_name}_m1", 
+                      f"Fake tracks VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                      n_bins, bins_array)
+    
+    h_fake_m2 = ROOT.TH1F(f"h_fake_{var_name}_m2", 
+                      f"Fake tracks VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Entries", 
+                      n_bins, bins_array)
+    
+    # Fill histograms
+    for val in all_reco_m1_flat:
+        h_all_rec_m1.Fill(val)
+    for val in all_reco_m2_flat:
+        h_all_rec_m2.Fill(val)
+    for val in tp_m1_flat:
+        h_fake_m1.Fill(val)
+    for val in tp_m2_flat:
+        h_fake_m2.Fill(val)
+    
+    # Create efficiency histograms
+    h_purity_m1 = h_all_rec_m1.Clone(f"h_purity_{var_name}_m1")
+    h_purity_m1.Divide(h_fake_m1, h_all_rec_m1, 1.0, 1.0, "B")  # binomial errors
+    h_purity_m1.SetTitle(f"Purity VS #{var_name} - Hough - {n_tracks_per_event} tracks per event;#{var_name} (deg);Purity")
+    
+    h_purity_m2 = h_all_rec_m2.Clone(f"h_purity_{var_name}_m2")
+    h_purity_m2.Divide(h_fake_m2, h_all_rec_m2, 1.0, 1.0, "B")  # binomial errors
+    h_purity_m2.SetTitle(f"Purity VS #{var_name} - Comb. - {n_tracks_per_event} tracks per event;#{var_name} (deg);Purity")
+    
+    return h_purity_m1, h_purity_m2
 
 
 def initialize_counters(n_events, n_tracks_per_event, file_data):
@@ -990,10 +1262,13 @@ def initialize_counters(n_events, n_tracks_per_event, file_data):
             "fake": {
                 "tot_rec": 0,      # totale reco tracks (denominatore)
                 "tot_fake": 0,     # totale fake (numeratore)
+                "good_tot_rec": 0, # totale reco tracks matching gen (numeratore)
                 "3cl_rec": 0,      # totale reco con 3 cluster (denominatore)
                 "3cl_fake": 0,     # totale fake con 3 cluster (numeratore)
+                "good_3cl_rec": 0, # totale reco con 3 cluster matching gen (numeratore)
                 "2cl_rec": 0,      # totale reco con 2 cluster (denominatore)
                 "2cl_fake": 0,     # totale fake con 2 cluster (numeratore)
+                "good_2cl_rec": 0, # totale reco con 2 cluster matching gen (numeratore)
             },
         },
         "m2": {
@@ -1005,10 +1280,13 @@ def initialize_counters(n_events, n_tracks_per_event, file_data):
             "fake": {
                 "tot_rec": 0,      # totale reco tracks (denominatore)
                 "tot_fake": 0,     # totale fake (numeratore)
+                "good_tot_rec": 0, # totale reco tracks matching gen (numeratore)
                 "3cl_rec": 0,      # totale reco con 3 cluster (denominatore)
                 "3cl_fake": 0,     # totale fake con 3 cluster (numeratore)
+                "good_3cl_rec": 0, # totale reco con 3 cluster matching gen (numeratore)
                 "2cl_rec": 0,      # totale reco con 2 cluster (denominatore)
                 "2cl_fake": 0,     # totale fake con 2 cluster (numeratore)
+                "good_2cl_rec": 0, # totale reco con 2 cluster matching gen (numeratore)
             }
         }
     }

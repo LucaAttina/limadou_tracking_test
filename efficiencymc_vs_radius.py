@@ -18,6 +18,11 @@ from efficiency_utils_new import (
     compute_gen_mask, 
     is_track_reconstructed
 )
+import re
+import json
+
+def format_latex(val, err):
+    return f"({100*val:.2f} $\\pm$ {100*err:.2f})"
 
 
 def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, phi_angle_threshold=5.0):
@@ -32,14 +37,22 @@ def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, p
     Returns:
         tuple: (radius, eff_m1, eff_m2, counters_m1, counters_m2)
     """
+    delta_counter_m1 = 0
+    delta_counter_m2 = 0
     tot_fake_m1 = 0
     tot_fake_m2 = 0
     # Open file and read radius
     f = uproot.open(fname)
     p = f.get("radius")
     if not p:
-        raise RuntimeError("TParameter 'radius' not found in file")
-    r_val = p.value
+        match = re.search(r"_r_0p(\d+)_", fname)
+
+        if match:
+            r_val = float("0." + match.group(1))
+        else:
+            raise RuntimeError("TParameter 'radius' not found in file")
+    else:
+        r_val = p.value
     print(f"\n{'='*100}\n")
     print(f"Processing file: {fname}, radius: {r_val:.2f} mm\n")
     
@@ -150,6 +163,7 @@ def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, p
                 )
 
                 tot_fake_m1 += n_fake_m1
+
         
         # Process M2 (always)
         reco_m2_idx = np.where(ev_idx == file_data["rec_data"]["m2"]["event_idx"])[0]
@@ -196,6 +210,21 @@ def calculate_efficiency(fname, calculate_m1=False, theta_angle_threshold=5.0, p
     #n_reco_m2 = sum(eff_info["m2"][ev_idx][trk_idx] 
     #                for ev_idx in range(n_events) 
     #                for trk_idx in range(n_tracks_per_event))
+
+    if calculate_m1: 
+        print(f"\nM1 Efficiency: {eff_counters["m1"]["eff"]["tot_rec_gen"]} / {eff_counters["mc"]["tot_gen"]} = {100*eff_counters["m1"]["eff"]["tot_rec_gen"]/eff_counters["mc"]["tot_gen"]:.2f}%")
+        print(f"M1 3-cluster Efficiency: {eff_counters["m1"]["eff"]["3cl_rec_gen"]} / {eff_counters["mc"]["3cl_gen"]} = {100*eff_counters["m1"]["eff"]["3cl_rec_gen"]/eff_counters["mc"]["3cl_gen"]:.2f}%")
+        print(f"M1 2-cluster Efficiency: {eff_counters["m1"]["eff"]["2cl_rec_gen"]} / {eff_counters["mc"]["2cl_gen"]} = {100*eff_counters["m1"]["eff"]["2cl_rec_gen"]/eff_counters["mc"]["2cl_gen"]:.2f}%")
+        print(f"\nM1 Fake Rate: {eff_counters["m1"]["fake"]["tot_fake"]} / {eff_counters["m1"]["fake"]["tot_rec"]} = {100*eff_counters["m1"]["fake"]["tot_fake"]/eff_counters["m1"]["fake"]["tot_rec"]:.2f}%")
+        print(f"M1 3-cluster Fake Rate: {eff_counters["m1"]["fake"]["3cl_fake"]} / {eff_counters["m1"]["fake"]["3cl_rec"]} = {100*eff_counters["m1"]["fake"]["3cl_fake"]/eff_counters["m1"]["fake"]["3cl_rec"]:.2f}%")
+        print(f"M1 2-cluster Fake Rate: {eff_counters["m1"]["fake"]["2cl_fake"]} / {eff_counters["m1"]["fake"]["2cl_rec"]} = {100*eff_counters["m1"]["fake"]["2cl_fake"]/eff_counters["m1"]["fake"]["2cl_rec"]:.2f}%")
+    
+    print(f"\nM2 Efficiency - Radius: {r_val:.2f} mm: {eff_counters["m2"]["eff"]["tot_rec_gen"]} / {eff_counters["mc"]["tot_gen"]} = {100*eff_counters["m2"]["eff"]["tot_rec_gen"]/eff_counters["mc"]["tot_gen"]:.2f}%")
+    print(f"M2 3-cluster Efficiency - Radius: {r_val:.2f} mm: {eff_counters["m2"]["eff"]["3cl_rec_gen"]} / {eff_counters["mc"]["3cl_gen"]} = {100*eff_counters["m2"]["eff"]["3cl_rec_gen"]/eff_counters["mc"]["3cl_gen"]:.2f}%")
+    print(f"M2 2-cluster Efficiency - Radius: {r_val:.2f} mm: {eff_counters["m2"]["eff"]["2cl_rec_gen"]} / {eff_counters["mc"]["2cl_gen"]} = {100*eff_counters["m2"]["eff"]["2cl_rec_gen"]/eff_counters["mc"]["2cl_gen"]:.2f}%")
+    print(f"\nM2 Fake Rate - Radius: {r_val:.2f} mm: {eff_counters["m2"]["fake"]["tot_fake"]} / {eff_counters["m2"]["fake"]["tot_rec"]} = {100*eff_counters["m2"]["fake"]["tot_fake"]/eff_counters["m2"]["fake"]["tot_rec"]:.2f}%")
+    print(f"M2 3-cluster Fake Rate - Radius: {r_val:.2f} mm: {eff_counters["m2"]["fake"]["3cl_fake"]} / {eff_counters["m2"]["fake"]["3cl_rec"]} = {100*eff_counters["m2"]["fake"]["3cl_fake"]/eff_counters["m2"]["fake"]["3cl_rec"]:.2f}%")
+    print(f"M2 2-cluster Fake Rate - Radius: {r_val:.2f} mm: {eff_counters["m2"]["fake"]["2cl_fake"]} / {eff_counters["m2"]["fake"]["2cl_rec"]} = {100*eff_counters["m2"]["fake"]["2cl_fake"]/eff_counters["m2"]["fake"]["2cl_rec"]:.2f}%")
             
     # Calculate efficiencies
     results["efficiency"]["m1"]["tot"] = ( eff_counters["m1"]["eff"]["tot_rec_gen"] / eff_counters["mc"]["tot_gen"] if eff_counters["mc"]["tot_gen"] > 0 else 0)
@@ -258,7 +287,7 @@ def write_detailed_report(dump, radii, eff_m1, eff_m2_list, counters_m1, counter
     dump.write("\n" + "="*80 + "\n")
 
 
-def plot_efficiency_vs_radius(input_dir, output_dir):
+def plot_efficiency_vs_radius(input_dir, output_dir, part):
     """
     Main function to calculate and plot efficiency vs radius.
     """
@@ -268,6 +297,16 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
         s_str = "not_shared"
     elif "/shared/" in input_dir:
         s_str = "shared"
+    else:
+        s_str = "not_shared"
+
+    if part == "e":
+        particle = "electron"
+    elif part == "p":
+        particle = "proton"
+    elif part == "mu":
+        particle = "muon"
+        
     with open(dump_path, 'w') as dump:
         
         # Find all ROOT files inside input directory
@@ -315,6 +354,8 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
         err_fake_m2_2cl_list = []
         counters_m1 = None
         counters_m2_list = []
+
+        data_per_radius = []
         
         # Process all files
         for i, fname in enumerate(files):
@@ -322,6 +363,44 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
             calculate_m1 = (i == 0)
             
             r_val, results, n_tracks_per_event = calculate_efficiency(fname, calculate_m1)
+
+            entry = {
+                "radius": r_val,
+
+                "m2": {
+                    "efficiency": {
+                        "tot": format_latex(
+                            results["efficiency"]["m2"]["tot"],
+                            results["efficiency"]["m2"]["tot_err"]
+                        ),
+                        "3cl": format_latex(
+                            results["efficiency"]["m2"]["3cl"],
+                            results["efficiency"]["m2"]["3cl_err"]
+                        ),
+                        "2cl": format_latex(
+                            results["efficiency"]["m2"]["2cl"],
+                            results["efficiency"]["m2"]["2cl_err"]
+                        ),
+                    },
+
+                    "fake": {
+                        "tot": format_latex(
+                            results["fake"]["m2"]["tot"],
+                            results["fake"]["m2"]["tot_err"]
+                        ),
+                        "3cl": format_latex(
+                            results["fake"]["m2"]["3cl"],
+                            results["fake"]["m2"]["3cl_err"]
+                        ),
+                        "2cl": format_latex(
+                            results["fake"]["m2"]["2cl"],
+                            results["fake"]["m2"]["2cl_err"]
+                        ),
+                    }
+                }
+            }
+
+            data_per_radius.append(entry)
             
             radii.append(r_val)
             eff_m2_list.append(results["efficiency"]["m2"]["tot"])
@@ -351,9 +430,24 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
                 err_fake_m1 = results["fake"]["m1"]["tot_err"]
                 err_fake_m1_3cl = results["fake"]["m1"]["3cl_err"]
                 err_fake_m1_2cl = results["fake"]["m1"]["2cl_err"]
+
+                m1_entry = {
+                    "efficiency": {
+                        "tot": format_latex(eff_m1, err_m1),
+                        "3cl": format_latex(eff_m1_3cl, err_m1_3cl),
+                        "2cl": format_latex(eff_m1_2cl, err_m1_2cl),
+                    },
+                    "fake": {
+                        "tot": format_latex(fake_m1, err_fake_m1),
+                        "3cl": format_latex(fake_m1_3cl, err_fake_m1_3cl),
+                        "2cl": format_latex(fake_m1_2cl, err_fake_m1_2cl),
+                    }
+                }
                 #counters_m1 = counters["m1"]
-                
+
+
                 # Print M1 results
+                '''
                 print(f"\nM1 Efficiency: = {100*eff_m1:.2f}%")
                 print(f"M1 3-cluster Efficiency: = {100*eff_m1_3cl:.2f}%")
                 print(f"M1 2-cluster Efficiency: = {100*eff_m1_2cl:.2f}%")
@@ -361,7 +455,9 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
                 print(f"M1 3-cluster Fake Rate: = {100*fake_m1_3cl:.2f}%")
                 print(f"M1 2-cluster Fake Rate: = {100*fake_m1_2cl:.2f}%\n")
             
+                '''
             # Print M2 results
+            '''
             print(f"M2 Efficiency - Radius: {r_val:.2f} mm = {100*eff_m2_list[-1]:.2f}%")
             print(f"M2 3-cluster Efficiency - Radius: {r_val:.2f} mm = {100*eff_m2_3cl_list[-1]:.2f}%")
             print(f"M2 2-cluster Efficiency - Radius: {r_val:.2f} mm = {100*eff_m2_2cl_list[-1]:.2f}%")
@@ -369,6 +465,7 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
             print(f"M2 3-cluster Fake Rate - Radius: {r_val:.2f} mm = {100*fake_m2_3cl_list[-1]:.2f}%")
             print(f"M2 2-cluster Fake Rate - Radius: {r_val:.2f} mm = {100*fake_m2_2cl_list[-1]:.2f}%")
         
+            '''
         # Write complete report
         #write_detailed_report(dump, radii, eff_m1, eff_m2_list, 
         #                     counters_m1, counters_m2_list)
@@ -376,22 +473,35 @@ def plot_efficiency_vs_radius(input_dir, output_dir):
     #print(f"\nDetailed report saved to: {dump_path}")
     
     # Create plots
-    create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=None, s_str=s_str)
-    create_efficiency_plots(radii, eff_m1_3cl, err_m1_3cl, eff_m2_3cl_list, err_m2_3cl_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=3, s_str=s_str)
-    create_efficiency_plots(radii, eff_m1_2cl, err_m1_2cl, eff_m2_2cl_list, err_m2_2cl_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=2, s_str=s_str)
-    create_fake_rate_plots(radii, fake_m1, err_fake_m1, fake_m2_list, err_fake_m2_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.08, cl=None, s_str=s_str)
-    create_fake_rate_plots(radii, fake_m1_3cl, err_fake_m1_3cl, fake_m2_3cl_list, err_fake_m2_3cl_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.04, cl=3, s_str=s_str)
-    create_fake_rate_plots(radii, fake_m1_2cl, err_fake_m1_2cl, fake_m2_2cl_list, err_fake_m2_2cl_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.1, cl=2, s_str=s_str)
+    create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=None, s_str=s_str, particle=particle)
+    create_efficiency_plots(radii, eff_m1_3cl, err_m1_3cl, eff_m2_3cl_list, err_m2_3cl_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=3, s_str=s_str, particle=particle)
+    create_efficiency_plots(radii, eff_m1_2cl, err_m1_2cl, eff_m2_2cl_list, err_m2_2cl_list, output_dir, n_tracks_per_event, miny=0.6, maxy=1.05, cl=2, s_str=s_str, particle=particle)
+    create_fake_rate_plots(radii, fake_m1, err_fake_m1, fake_m2_list, err_fake_m2_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.02, cl=None, s_str=s_str, particle=particle)
+    create_fake_rate_plots(radii, fake_m1_3cl, err_fake_m1_3cl, fake_m2_3cl_list, err_fake_m2_3cl_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.04, cl=3, s_str=s_str, particle=particle)
+    create_fake_rate_plots(radii, fake_m1_2cl, err_fake_m1_2cl, fake_m2_2cl_list, err_fake_m2_2cl_list, output_dir, n_tracks_per_event, miny=0.0, maxy=0.04, cl=2, s_str=s_str, particle=particle)
+
+    final_dict = {
+        "input_dir": input_dir,
+        "particle": particle,
+        "mode": s_str,
+        "data": data_per_radius,
+        "m1": m1_entry
+    }
+
+    output_json = os.path.join(output_dir, f"efficiency_fake_r_{part}_{s_str}.json")
+    json_path = os
+    with open(output_json, "w") as f:
+       json.dump(final_dict, f, indent=4)
 
 
-def create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, output_dir, n_tracks_per_event, miny, maxy, cl=None, s_str=None):
+def create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, output_dir, n_tracks_per_event, miny, maxy, cl=None, s_str=None, particle="electron"):
     """
     Create efficiency plots.
     """
     n_points = len(radii)
     
     # Create canvas
-    c = ROOT.TCanvas(f"c_eff_vs_radius_{cl if cl is not None else 'all'}_cl", f"Efficiency vs Radius - {cl if cl is not None else 'All'} Clusters ({s_str})", 800, 600)
+    c = ROOT.TCanvas(f"c_eff_vs_radius_{cl if cl is not None else 'all'}_cl", f"Efficiency vs Radius - {cl if cl is not None else 'All'} Clusters ({particle}s)", 800, 600)
     
     # M2 graph
     gr_m2 = ROOT.TGraphErrors(n_points, np.array(radii, dtype='float64'), 
@@ -402,7 +512,7 @@ def create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, out
     gr_m2.SetLineColor(ROOT.kRed)
     gr_m2.SetMaximum(maxy)
     gr_m2.SetMinimum(miny)
-    gr_m2.SetTitle(f"Efficiency vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters ({s_str});Radius [mm];Efficiency")
+    gr_m2.SetTitle(f"Efficiency vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters ({particle}s);Radius [mm];Efficiency")
     gr_m2.SetName("gr_m2")
     gr_m2.Draw("AP")
     
@@ -430,14 +540,14 @@ def create_efficiency_plots(radii, eff_m1, err_m1, eff_m2_list, err_m2_list, out
     print(f"Plot saved to: {plot_path}")
 
 
-def create_fake_rate_plots(radii, fake_m1, err_fake_m1, fake_m2_list, err_fake_m2_list, output_dir, n_tracks_per_event, miny, maxy, cl=None, s_str=None):
+def create_fake_rate_plots(radii, fake_m1, err_fake_m1, fake_m2_list, err_fake_m2_list, output_dir, n_tracks_per_event, miny, maxy, cl=None, s_str=None, particle="electron"):
     """
     Create fake rate plots.
     """
     n_points = len(radii)
     
     # Create canvas
-    c = ROOT.TCanvas(f"c_fake_vs_radius_{cl if cl is not None else 'all'}_cl", f"Fake Rate vs Radius - {cl if cl is not None else 'All'} Clusters ({s_str})", 800, 600)
+    c = ROOT.TCanvas(f"c_fake_vs_radius_{cl if cl is not None else 'all'}_cl", f"Fake Rate vs Radius - {cl if cl is not None else 'All'} Clusters ({particle}s)", 800, 600)
     
     # M2 graph
     gr_m2 = ROOT.TGraphErrors(n_points, np.array(radii, dtype='float64'), 
@@ -448,7 +558,8 @@ def create_fake_rate_plots(radii, fake_m1, err_fake_m1, fake_m2_list, err_fake_m
     gr_m2.SetLineColor(ROOT.kRed)
     gr_m2.SetMaximum(maxy)
     gr_m2.SetMinimum(miny)
-    gr_m2.SetTitle(f"Fake Rate vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters ({s_str});Radius [mm];Fake Rate")
+    gr_m2.SetTitle(f"Fake Rate vs Radius - {n_tracks_per_event} tracks per event - {cl if cl is not None else 'All'} Clusters ({particle}s);Radius [mm];Fake Rate")
+    gr_m2.GetYaxis().SetTitleOffset(1.5);
     gr_m2.SetName("gr_m2")
     gr_m2.Draw("AP")
     
@@ -482,7 +593,13 @@ if __name__ == "__main__":
                        help="Directory containing .root files.")
     parser.add_argument("--output-dir", default=None, 
                        help="Define output directory.")
+    parser.add_argument("--particle", required=True, help="Select particle configuration.")
+
     args = parser.parse_args()
+
+    if args.particle not in ["e", "p", "c", "mu"]:
+        print(f"Error: Invalid particle type '{args.particle}'. Must be one of: e, p, c.")
+        sys.exit(1)
     
     config_file = "config/config_efficiency.yaml"
     with open(config_file, "r") as f_cfg:
@@ -496,4 +613,4 @@ if __name__ == "__main__":
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     
-    plot_efficiency_vs_radius(args.input_dir, output_dir)
+    plot_efficiency_vs_radius(args.input_dir, output_dir, args.particle)
