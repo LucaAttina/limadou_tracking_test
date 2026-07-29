@@ -357,84 +357,8 @@ def load_all_trees_data(root_file_path):
     return all_data
 
 
-def draw_histogram_with_legend(hist, props, title, pad, coord_name):
-    """Draw a histogram with a legend showing mean and std dev."""
-    global legends
-    pad.cd()
-    #pad.SetGrid()
-    pad.SetMargin(0.12, 0.04, 0.12, 0.08)
-    
-    if hist and hist.GetEntries() > 0:
-        # Style the histogram
-        hist.SetTitle(title)
-        hist.GetXaxis().SetTitle("Residual [mm]")
-        hist.GetYaxis().SetTitle("Entries")
-        hist.SetLineColor(ROOT.kRed)
-        hist.SetLineWidth(1)
-        #hist.SetFillStyle(3001)
-        #hist.SetFillColor(ROOT.kGray)
-        # Prima di Draw
-        xmin = props['mean'] - 3*props['std_dev']
-        xmax = props['mean'] + 3*props['std_dev']
-        hist.GetXaxis().SetRangeUser(xmin, xmax)
-        #print(f"AAAA: {xmin} - {xmax}")
-        hist.Draw("E")
-        ROOT.gStyle.SetOptStat(0)
-        
-        pad.cd()
-        # Create legend
-        legend = ROOT.TLegend(0.67, 0.72, 0.96, 0.92)
-        #legend.SetBorderSize(0)
-        legend.SetFillStyle(1001)
-        legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.034)
-        legend.SetFillStyle(0)
-        legend.SetEntrySeparation(0.0)  # Rimuove la separazione tra simbolo e testo
-        legend.SetMargin(0.05)           # Rimuove il margine sinistro
-        #legend.SetTextSize(0.04)
-        
-        # Add entries
-        mean = hist.GetMean()
-        mean_err = hist.GetMeanError()
-
-        #print(f"Mean = {mean:.5f} ± {mean_err:.5f}")
-        legend.AddEntry(ROOT.nullptr, f"Entries: {int(hist.GetEntries())}", "")
-        legend.AddEntry(ROOT.nullptr, f"Mean: ({mean:.4f}#pm{mean_err:.4f}) mm", "")
-        #legend.AddEntry("", f"Std Dev: {props['std_dev']:.4f} mm", "")
-        
-        # Add RMS from histogram
-        rms = hist.GetRMS()
-        rms_err = hist.GetRMSError()
-        legend.AddEntry(ROOT.nullptr, f"RMS: ({rms:.4f}#pm{rms_err:.4f}) mm", "")
-        
-        legend.Draw()
-        legends.append(legend)
-        pad.Update()
-        
-        # Add coordinate label
-        #label = ROOT.TLatex()
-        #label.SetTextAlign(12)
-        #label.SetTextSize(0.04)
-        #label.DrawLatex(0.15, 0.92, f"{coord_name}")
-        
-    else:
-        # Empty histogram
-        dummy = ROOT.TH1F("dummy", title, 10, -5, 5)
-        dummy.SetFillStyle(0)
-        dummy.GetXaxis().SetTitle("Residual [mm]")
-        dummy.GetYaxis().SetTitle("Counts")
-        dummy.SetMaximum(1)
-        dummy.SetMinimum(0)
-        dummy.Draw()
-        
-        label = ROOT.TLatex()
-        label.SetTextAlign(22)
-        label.SetTextSize(0.05)
-        label.DrawLatex(0, 0.5, "No data available")
-
 
 def process_single_tree(tree_name,tree_data,outdir,mc,particle):
-
 
     energy=tree_data["energy"]
     data=tree_data["data"]

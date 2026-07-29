@@ -93,7 +93,7 @@ def res_plots(input_dir, output_dir):
     global_min = 1.5*1e-3
     global_max = 2e-1
     x_axis_min = 5.0
-    x_axis_max = 950
+    x_axis_max = 1600
 
     datasets = []
 
@@ -112,7 +112,7 @@ def res_plots(input_dir, output_dir):
         betap_vals = np.array(betap, dtype=float)
 
         if particle == "carbon":
-            betap_vals /= 12
+            betap_vals /= 6
 
         dataset = {
             "particle": particle,
@@ -187,7 +187,7 @@ def res_plots(input_dir, output_dir):
     # Legenda unica
     # =========================================================
 
-    legend = ROOT.TLegend(0.79, 0.72, 0.99, 0.93)
+    legend = ROOT.TLegend(0.80, 0.72, 0.9665, 0.944)
 
     legend.SetBorderSize(1)
     #legend.SetFillStyle(1001)
@@ -350,7 +350,7 @@ def res_plots(input_dir, output_dir):
                 elif dataset['particle'] == "proton":
                     part = "p"
                 elif dataset['particle'] == "carbon":
-                    part = "c"
+                    part = "C"
 
                 if dataset["is_mc"]:
                     legend.AddEntry(graph_x,

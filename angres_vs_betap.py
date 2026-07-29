@@ -75,7 +75,7 @@ def res_plots(input_dir, output_dir, value):
     global_min = -2
     global_max = 50
     x_axis_min = 5.0
-    x_axis_max = 950
+    x_axis_max = 1600
     c.SetLogx()
     
 
@@ -119,8 +119,8 @@ def res_plots(input_dir, output_dir, value):
             betap = tree_data["betap"][0]
 
             # eventuale correzione carbonio
-            if particle == "carbon":
-                betap /= 12.
+            if particle == "c":
+                betap /= 6.0
 
             dataset["betap"].append(betap)
 
@@ -406,7 +406,7 @@ def res_plots(input_dir, output_dir, value):
 
             # Le tacche sono già in basso di default, 
             # ma per averle anche in alto usa:
-            pad.SetTickx(1)  # 1 = mostra tacche su entrambi i lati (alto e basso)
+            #pad.SetTickx(1)  # 1 = mostra tacche su entrambi i lati (alto e basso)
             #pad.SetTicky(1)
 
             graph_x.GetXaxis().SetLabelSize(0.12)
@@ -454,7 +454,7 @@ def res_plots(input_dir, output_dir, value):
     xlabel.SetTextFont(42)
 
     xlabel.DrawLatex(
-        0.80,
+        0.60,
         0.03,
         "#betap/Z [MeV]"
     )

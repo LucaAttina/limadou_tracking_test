@@ -224,7 +224,9 @@ def delta_data(input_dir, output_dir, config, particle="e", mc="False"):
         if not match:
             continue
 
-        energy = float(match.group(1))            
+        energy = float(match.group(1))
+        if particle == "c":
+            energy *= 12         
 
         Etot = energy + mass
         p2 = Etot**2 - mass**2
