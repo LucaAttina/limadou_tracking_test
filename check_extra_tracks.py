@@ -98,6 +98,7 @@ ROOT.gStyle.SetOptStat(0)
 
 from utils import safe_first, load_and_select_events, analyze_event, get_all_clusters, remove_duplicate_tracks, is_good_track
 
+'''
 # ============================================================
 # Text output and histogram filling (single method)
 # ============================================================
@@ -220,10 +221,11 @@ def write_txt_dump(
         f.write(f"\nTracks number = {trk_num}")
         f.write(f"\nGood tracks = {good_tracks}")
         f.write(f"\nGood tracks ratio = {good_tracks/trk_num*100:.2f}%" if trk_num > 0 else "\nGood tracks ratio = 0.00%")
+    '''
 
 
 # ============================================================
-# Text output and histogram filling (comparison m1 vs m2)
+# Text output and histogram filling (comparison)
 # ============================================================
 def compare_txt(
     txt_output,
@@ -233,77 +235,77 @@ def compare_txt(
     h_resx_m1, h_resx_m2,
     h_resy_m1, h_resy_m2,
     h_dsum_vs_ncls_m1, h_dsum_vs_ncls_m2,
-    counters_m1, counters_m2,
+    counters_hough, counters_comb,
     debug_all=False,
 ):
-    """Write event details into a TXT file comparing m1 and m2 side by side.
+    """Write event details into a TXT file comparing Hough and Comb side by side.
        If debug_all is False, skip events with same multiplicity and good tracks in both methods."""
-    print(f"📝 Writing detailed event dump (m1 vs m2) to {txt_output}")
+    print(f"📝 Writing detailed event dump (Hough vs Comb) to {txt_output}")
 
-    trk_num_m1 = 0
-    trk_num_m2 = 0
-    good_tracks_m1 = 0
-    good_tracks_m2 = 0
+    trk_num_hough = 0
+    trk_num_comb = 0
+    good_tracks_hough = 0
+    good_tracks_comb = 0
     
     with open(txt_output, "w") as f:
         for i, evt in enumerate(results):
 
             all_clusters = evt["clusters"]        
-            tracks_m1 = evt["m1"]     
-            tracks_m2 = evt["m2"]
+            tracks_hough = evt["hough"]     
+            tracks_comb = evt["comb"]
             
             # Skip events with no tracks
-            if len(tracks_m1) == 0 and len(tracks_m2) == 0:
+            if len(tracks_hough) == 0 and len(tracks_comb) == 0:
                 continue
 
             # check if we should skip this event (if not in debug_all mode)
             if not debug_all:
                 should_skip = True
                 # condition 1: different multiplicity
-                if len(tracks_m1) != len(tracks_m2):
+                if len(tracks_hough) != len(tracks_comb):
                     should_skip = False
                 # condition 2: difference in good track
                 else:
-                    for track_num in range(len(tracks_m1)):
-                        if track_num >= len(tracks_m2):
+                    for track_num in range(len(tracks_hough)):
+                        if track_num >= len(tracks_comb):
                             continue
 
-                        trk_m1 = tracks_m1[track_num]
-                        trk_m2 = tracks_m2[track_num]
+                        trk_hough = tracks_hough[track_num]
+                        trk_comb = tracks_comb[track_num]
 
                         # check if tracks are good
-                        is_good_m1 , _ , _  = is_good_track(trk_m1)
-                        is_good_m2 , _ , _ = is_good_track(trk_m2)
+                        is_good_hough , _ , _  = is_good_track(trk_hough)
+                        is_good_comb , _ , _ = is_good_track(trk_comb)
 
                         # if one is not good while the other is, print details
-                        if not (is_good_m1 and is_good_m2):
+                        if not (is_good_hough and is_good_comb):
                             should_skip = False
                             break
                 if should_skip:
                     continue
 
             # count printed tracks only
-            trk_num_m1 += len(tracks_m1)
-            trk_num_m2 += len(tracks_m2)
+            trk_num_hough += len(tracks_hough)
+            trk_num_comb += len(tracks_comb)
             
             f.write(f"{'='*60}\n")
             f.write(f"EVENT {i}\n")
             f.write(f"{'='*60}\n\n")
             
             # Print tracks info side by side
-            f.write(f"{f'M1 METHOD - mult_x0 = {len(tracks_m1)}':<45} | {f'M2 METHOD - mult_x0_m2 = {len(tracks_m2)}':<45}\n")
+            f.write(f"{f'HOUGH METHOD - mult_tracks = {len(tracks_hough)}':<45} | {f'COMB METHOD - mult_tracks = {len(tracks_comb)}':<45}\n")
             f.write(f"{'-'*45} | {'-'*45}\n\n")
             
             # Set max number of tracks
-            max_tracks = max(len(tracks_m1), len(tracks_m2))
+            max_tracks = max(len(tracks_hough), len(tracks_comb))
             
             for track_num in range(max_tracks):
-                # Prepare string m1
-                m1_str = ""
-                if track_num < len(tracks_m1):
-                    trk = tracks_m1[track_num]
+                # Prepare string hough
+                hough_str = ""
+                if track_num < len(tracks_hough):
+                    trk = tracks_hough[track_num]
                     
-                    # Fill histos for m1
+                    # Fill histos for hough
                     n_cls = trk.n_cls
                     h_ncls_m1.Fill(n_cls)
                     Dsum = trk.D_sum
@@ -320,60 +322,60 @@ def compare_txt(
                     #)
 
                     # check if good track
-                    is_good_track_m1, issue_meanx, same_z_count = is_good_track(trk)
+                    is_good_track_hough, issue_meanx, same_z_count = is_good_track(trk)
 
                     if issue_meanx:
-                        counters_m1["bad_meanx"] += 1
+                        counters_hough["bad_meanx"] += 1
                     if not trk.hit_tr:
-                        counters_m1["no_TR_hit"] += 1
+                        counters_hough["no_TR_hit"] += 1
                     if same_z_count >= 2:
-                        counters_m1["same_z_tracks"] += 1
+                        counters_hough["same_z_tracks"] += 1
 
                     # Build string m1
                     cluster_ids = [str(c.cluster_idx) for c in trk.clusters]
-                    if is_good_track_m1:
-                        m1_str += "### GOOD TRACK ###\n"
-                        good_tracks_m1 += 1
-                    m1_str += f"* Track {trk.track_idx}: trk_idx={trk.track_idx}\n"
-                    m1_str += f"x0={trk.x0:.5f}, y0={trk.y0:.5f}\n"
-                    m1_str += f"theta={trk.theta:.5f}, phi={trk.phi:.5f}\n"
-                    m1_str += f"n_cls={trk.n_cls}, Dsum={Dsum:.5f}\n"
-                    m1_str += f"hit_TR={int(trk.hit_tr)}, missing_in_acc={int(trk.missing_in_acc)}\n"
-                    m1_str += f"clusters used: {', '.join(cluster_ids)}\n"
+                    if is_good_track_hough:
+                        hough_str += "### GOOD TRACK ###\n"
+                        good_tracks_hough += 1
+                    hough_str += f"* Track {trk.track_idx}: trk_idx={trk.track_idx}\n"
+                    hough_str += f"x0={trk.x0:.5f}, y0={trk.y0:.5f}\n"
+                    hough_str += f"theta={trk.theta:.5f}, phi={trk.phi:.5f}\n"
+                    hough_str += f"n_cls={trk.n_cls}, Dsum={Dsum:.5f}\n"
+                    hough_str += f"hit_TR={int(trk.hit_tr)}, missing_in_acc={int(trk.missing_in_acc)}\n"
+                    hough_str += f"clusters used: {', '.join(cluster_ids)}\n"
                     
                     # Issues
                     if issue_meanx or same_z_count > 0 or not trk.hit_tr or trk.missing_in_acc or Dsum > 10:
-                        m1_str += "⚠️ Issues:\n"
+                        hough_str += "⚠️ Issues:\n"
                         if issue_meanx:
-                            m1_str += "  - mean_x = -999\n"
+                            hough_str += "  - mean_x = -999\n"
                         if same_z_count >= 2:
-                            m1_str += f"  - ≥2 clusters same Z\n"
+                            hough_str += f"  - ≥2 clusters same Z\n"
                         if not trk.hit_tr:
-                            m1_str += "  - no_TR_hit\n"
+                            hough_str += "  - no_TR_hit\n"
                         if trk.missing_in_acc:
-                            m1_str += "  - missing point in acceptance\n"
+                            hough_str += "  - missing point in acceptance\n"
                         if same_z_count > 0:
-                            m1_str += "  - clusters with same Z\n"
+                            hough_str += "  - clusters with same Z\n"
                         if Dsum > 10:
-                            m1_str += "  - Dsum > 10\n"
+                            hough_str += "  - Dsum > 10\n"
                     
                     # Clusters details
                     for j, c in enumerate(trk.clusters):
-                        m1_str += f"- Cluster {j}: cls_idx={c.cluster_idx}\n"
-                        m1_str += f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}\n"
-                        m1_str += f"  z={c.mean_z:.3f}, size={c.size}\n"
-                        m1_str += f"  res_x={c.res_x:.3f}, res_y={c.res_y:.3f}\n"
+                        hough_str += f"- Cluster {j}: cls_idx={c.cluster_idx}\n"
+                        hough_str += f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}\n"
+                        hough_str += f"  z={c.mean_z:.3f}, size={c.size}\n"
+                        hough_str += f"  res_x={c.res_x:.3f}, res_y={c.res_y:.3f}\n"
                     
                     
                 else:
-                    m1_str = "NO TRACK\n"
+                    hough_str = "NO TRACK\n"
                 
-                # Prepare string m2
-                m2_str = ""
-                if track_num < len(tracks_m2):
-                    trk = tracks_m2[track_num]
+                # Prepare string comb
+                comb_str = ""
+                if track_num < len(tracks_comb):
+                    trk = tracks_comb[track_num]
                     
-                    # Fill histos for m2
+                    # Fill histos for comb
                     n_cls = trk.n_cls
                     h_ncls_m2.Fill(n_cls)
                     Dsum = trk.D_sum
@@ -392,62 +394,62 @@ def compare_txt(
 
                     
                     # check if good track
-                    is_good_track_m2, issue_meanx, same_z_count = is_good_track(trk)
+                    is_good_track_comb, issue_meanx, same_z_count = is_good_track(trk)
                     
                     if issue_meanx:
-                        counters_m2["bad_meanx"] += 1
+                        counters_comb["bad_meanx"] += 1
                     if not trk.hit_tr:
-                        counters_m2["no_TR_hit"] += 1
+                        counters_comb["no_TR_hit"] += 1
                     if same_z_count >= 2:
-                        counters_m2["same_z_tracks"] += 1
+                        counters_comb["same_z_tracks"] += 1
 
                     # Build string M2
                     cluster_ids = [str(c.cluster_idx) for c in trk.clusters]
-                    if is_good_track_m2:
-                        m2_str += "### GOOD TRACK ###\n"
-                        good_tracks_m2 += 1
-                    m2_str += f"* Track {trk.track_idx}: trk_idx={trk.track_idx}\n"
-                    m2_str += f"x0={trk.x0:.5f}, y0={trk.y0:.5f}\n"
-                    m2_str += f"theta={trk.theta:.5f}, phi={trk.phi:.5f}\n"
-                    m2_str += f"n_cls={trk.n_cls}, Dsum={Dsum:.5f}\n"
-                    m2_str += f"hit_TR={int(trk.hit_tr)}, missing_in_acc={int(trk.missing_in_acc)}\n"
-                    m2_str += f"clusters used: {', '.join(cluster_ids)}\n"
+                    if is_good_track_comb:
+                        comb_str += "### GOOD TRACK ###\n"
+                        good_tracks_comb += 1
+                    comb_str += f"* Track {trk.track_idx}: trk_idx={trk.track_idx}\n"
+                    comb_str += f"x0={trk.x0:.5f}, y0={trk.y0:.5f}\n"
+                    comb_str += f"theta={trk.theta:.5f}, phi={trk.phi:.5f}\n"
+                    comb_str += f"n_cls={trk.n_cls}, Dsum={Dsum:.5f}\n"
+                    comb_str += f"hit_TR={int(trk.hit_tr)}, missing_in_acc={int(trk.missing_in_acc)}\n"
+                    comb_str += f"clusters used: {', '.join(cluster_ids)}\n"
                     
                     # Issues
                     if issue_meanx or same_z_count > 0 or not trk.hit_tr or trk.missing_in_acc:
-                        m2_str += "⚠️ Issues:\n"
+                        comb_str += "⚠️ Issues:\n"
                         if issue_meanx:
-                            m2_str += "  - mean_x = -999\n"
+                            comb_str += "  - mean_x = -999\n"
                         if same_z_count >= 2:
-                            m2_str += f"  - ≥2 clusters same Z\n"
+                            comb_str += f"  - ≥2 clusters same Z\n"
                         if not trk.hit_tr:
-                            m2_str += "  - no_TR_hit\n"
+                            comb_str += "  - no_TR_hit\n"
                         if trk.missing_in_acc:
-                            m2_str += "  - missing point in acceptance\n"
+                            comb_str += "  - missing point in acceptance\n"
                         if same_z_count > 0:
-                            m2_str += "  - clusters with same Z\n"
+                            comb_str += "  - clusters with same Z\n"
                         if Dsum > 10:
-                            m2_str += "  - Dsum > 10\n"
+                            comb_str += "  - Dsum > 10\n"
                     
                     # Clusters details
                     for j, c in enumerate(trk.clusters):
-                        m2_str += f"- Cluster {j}: cls_idx={c.cluster_idx}\n"
-                        m2_str += f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}\n"
-                        m2_str += f"  z={c.mean_z:.3f}, size={c.size}\n"
-                        m2_str += f"  res_x={c.res_x:.3f}, res_y={c.res_y:.3f}\n"
+                        comb_str += f"- Cluster {j}: cls_idx={c.cluster_idx}\n"
+                        comb_str += f"  x={c.mean_x:.3f}, y={c.mean_y:.3f}\n"
+                        comb_str += f"  z={c.mean_z:.3f}, size={c.size}\n"
+                        comb_str += f"  res_x={c.res_x:.3f}, res_y={c.res_y:.3f}\n"
                 else:
-                    m2_str = "NO TRACK\n"
+                    comb_str = "NO TRACK\n"
                 
                 # format output
-                m1_lines = m1_str.strip().split('\n')
-                m2_lines = m2_str.strip().split('\n')
-                max_lines = max(len(m1_lines), len(m2_lines))
+                hough_lines = hough_str.strip().split('\n')
+                comb_lines = comb_str.strip().split('\n')
+                max_lines = max(len(hough_lines), len(comb_lines))
                 
-                m1_lines += [''] * (max_lines - len(m1_lines))
-                m2_lines += [''] * (max_lines - len(m2_lines))
+                hough_lines += [''] * (max_lines - len(hough_lines))
+                comb_lines += [''] * (max_lines - len(comb_lines))
                 
-                for line_m1, line_m2 in zip(m1_lines, m2_lines):
-                    f.write(f"{line_m1:<45} | {line_m2:<45}\n")
+                for line_hough, line_comb in zip(hough_lines, comb_lines):
+                    f.write(f"{line_hough:<45} | {line_comb:<45}\n")
                 
                 f.write(f"{'-'*45} | {'-'*45}\n\n")
             
@@ -467,12 +469,12 @@ def compare_txt(
             f.write("\n" + "=" * 60 + "\n\n")
 
         f.write("\n" + "#" * 60)
-        f.write(f"\nTracks number (m1) = {trk_num_m1}")
-        f.write(f"\nGood tracks (m1) = {good_tracks_m1}")
-        f.write(f"\nTracks number (m2) = {trk_num_m2}")
-        f.write(f"\nGood tracks (m2) = {good_tracks_m2}")
-        f.write(f"\nGood tracks ratio (m1) = {good_tracks_m1/trk_num_m1*100:.2f}%" if trk_num_m1 > 0 else "\nGood tracks ratio (m1) = 0.00%")
-        f.write(f"\nGood tracks ratio (m2) = {good_tracks_m2/trk_num_m2*100:.2f}%" if trk_num_m2 > 0 else "\nGood tracks ratio (m2) = 0.00%")
+        f.write(f"\nTracks number (hough) = {trk_num_hough}")
+        f.write(f"\nGood tracks (hough) = {good_tracks_hough}")
+        f.write(f"\nTracks number (comb) = {trk_num_comb}")
+        f.write(f"\nGood tracks (comb) = {good_tracks_comb}")
+        f.write(f"\nGood tracks ratio (hough) = {good_tracks_hough/trk_num_hough*100:.2f}%" if trk_num_hough > 0 else "\nGood tracks ratio (hough) = 0.00%")
+        f.write(f"\nGood tracks ratio (comb) = {good_tracks_comb/trk_num_comb*100:.2f}%" if trk_num_comb > 0 else "\nGood tracks ratio (comb) = 0.00%")
 
 
 # ============================================================
@@ -480,7 +482,7 @@ def compare_txt(
 # ============================================================
 def create_event_ttree(root_file, results):
     """
-    Save event multiplicities for m1 and m2 into a Tree.
+    Save event multiplicities for hough and comb into a Tree.
     """
 
     root_file.cd()
@@ -488,17 +490,17 @@ def create_event_ttree(root_file, results):
     tree_ev = ROOT.TTree("EventSummary", "Event summary (track multiplicities)")
     
     event   = np.zeros(1, dtype=np.int32)
-    mult_m1 = np.zeros(1, dtype=np.int32)
-    mult_m2 = np.zeros(1, dtype=np.int32)
+    mult_hough = np.zeros(1, dtype=np.int32)
+    mult_comb  = np.zeros(1, dtype=np.int32)
 
     tree_ev.Branch("event", event, "event/I")
-    tree_ev.Branch("mult_m1", mult_m1, "mult_m1/I")
-    tree_ev.Branch("mult_m2", mult_m2, "mult_m2/I")
+    tree_ev.Branch("mult_hough", mult_hough, "mult_hough/I")
+    tree_ev.Branch("mult_comb", mult_comb, "mult_comb/I")
 
     for i, r in enumerate(results): # save multiplicities for each method
         event[0] = i
-        mult_m1[0] = len(r["m1"])
-        mult_m2[0] = len(r["m2"])
+        mult_hough[0] = len(r["hough"])
+        mult_comb[0] = len(r["comb"])
         tree_ev.Fill()
 
     tree_ev.Write()
@@ -509,7 +511,7 @@ def create_ttree(root_file, tracks, method=""):
     """Create and write a ROOT TTree with selected event-level info."""
 
     root_file.cd()
-    tree_out = ROOT.TTree(f"SelectedEvents{method}", f"Selected Events after filtering({method})")
+    tree_out = ROOT.TTree(f"SelectedEvents_{method}", f"Selected Events after filtering ({method})")
 
     x0_val = np.zeros(1, dtype=np.float32)
     y0_val = np.zeros(1, dtype=np.float32)
@@ -531,10 +533,10 @@ def create_ttree(root_file, tracks, method=""):
     res_x = ROOT.vector('float')()
     res_y = ROOT.vector('float')()
 
-    tree_out.Branch(f"x0{method}", x0_val, "x0/F")
-    tree_out.Branch(f"y0{method}", y0_val, "y0/F")
-    tree_out.Branch(f"theta{method}", theta_val, "theta/F")
-    tree_out.Branch(f"phi{method}", phi_val, "phi/F")
+    tree_out.Branch(f"x0", x0_val, "x0/F")
+    tree_out.Branch(f"y0", y0_val, "y0/F")
+    tree_out.Branch(f"theta", theta_val, "theta/F")
+    tree_out.Branch(f"phi", phi_val, "phi/F")
     tree_out.Branch("n_cls", n_cls, "n_cls/I")
     tree_out.Branch("track_hit_TR", hit_tr, "track_hit_TR/I")
     tree_out.Branch("missing_in_acceptance", in_acc, "missing_in_acceptance/I")
@@ -584,7 +586,7 @@ def create_ttree(root_file, tracks, method=""):
         tree_out.Fill()
 
     tree_out.Write()
-    print(f"✅ TTree 'SelectedEvents{method}' written.")
+    print(f"✅ TTree 'SelectedEvents_{method}' written.")
 
 
 # ============================================================
@@ -708,44 +710,42 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         multiplicity_config=multiplicity_config,
     )
 
-    
-
-    stats_m1_total = init_stats()
-    stats_m2_total = init_stats()
+    stats_hough_total = init_stats()
+    stats_comb_total = init_stats()
 
     results = []
 
     for i, evt in enumerate(arrays):
-        tracks_m1, clusters, stats_m1 = analyze_event(evt, i, method="hough")
-        tracks_m2, _, stats_m2 = analyze_event(evt, i, method="comb")
+        tracks_hough, clusters, stats_hough = analyze_event(evt, i, method="hough")
+        tracks_comb, _, stats_comb = analyze_event(evt, i, method="comb")
 
-        # Accumula statistiche per m1
-        for key in stats_m1_total:
-            stats_m1_total[key] += stats_m1.get(key, 0)
+        # Stats for hough
+        for key in stats_hough_total:
+            stats_hough_total[key] += stats_hough.get(key, 0)
 
-        # Accumula statistiche per m2
-        for key in stats_m2_total:
-            stats_m2_total[key] += stats_m2.get(key, 0)
+        # Stats for comb
+        for key in stats_comb_total:
+            stats_comb_total[key] += stats_comb.get(key, 0)
 
         results.append({
-            "m1": tracks_m1,
-            "m2": tracks_m2,
+            "hough": tracks_hough,
+            "comb": tracks_comb,
             "clusters": clusters
         })
 
-    print_stats(stats_m1_total, "M1 (Hough)")
-    print_stats(stats_m2_total, "M2 (Combinatorial)")
+    print_stats(stats_hough_total, "Hough")
+    print_stats(stats_comb_total, "Combinatorial")
 
     # Opzionale: stampa anche un confronto diretto
     print("\n" + "="*70)
-    print("📊 COMPARISON: M1 vs M2")
+    print("📊 COMPARISON: Hough vs Comb")
     print("="*70)
-    print(f"{'Metric':<35} {'M1':>10} {'M2':>10} {'Diff':>10}")
+    print(f"{'Metric':<35} {'Hough':>10} {'Comb':>10} {'Diff':>10}")
     print("-"*70)
-    print(f"{'Total tracks':<35} {stats_m1_total['total_tracks']:>10} {stats_m2_total['total_tracks']:>10} {stats_m2_total['total_tracks']-stats_m1_total['total_tracks']:>+10}")
-    print(f"{'Passed all cuts':<35} {stats_m1_total['passed_all']:>10} {stats_m2_total['passed_all']:>10} {stats_m2_total['passed_all']-stats_m1_total['passed_all']:>+10}")
-    print(f"{'n_cls=2 good':<35} {stats_m1_total['n_cls_2_good']:>10} {stats_m2_total['n_cls_2_good']:>10} {stats_m2_total['n_cls_2_good']-stats_m1_total['n_cls_2_good']:>+10}")
-    print(f"{'n_cls=3 good':<35} {stats_m1_total['n_cls_3_good']:>10} {stats_m2_total['n_cls_3_good']:>10} {stats_m2_total['n_cls_3_good']-stats_m1_total['n_cls_3_good']:>+10}")
+    print(f"{'Total tracks':<35} {stats_hough_total['total_tracks']:>10} {stats_comb_total['total_tracks']:>10} {stats_comb_total['total_tracks']-stats_hough_total['total_tracks']:>+10}")
+    print(f"{'Passed all cuts':<35} {stats_hough_total['passed_all']:>10} {stats_comb_total['passed_all']:>10} {stats_comb_total['passed_all']-stats_hough_total['passed_all']:>+10}")
+    print(f"{'n_cls=2 good':<35} {stats_hough_total['n_cls_2_good']:>10} {stats_comb_total['n_cls_2_good']:>10} {stats_comb_total['n_cls_2_good']-stats_hough_total['n_cls_2_good']:>+10}")
+    print(f"{'n_cls=3 good':<35} {stats_hough_total['n_cls_3_good']:>10} {stats_comb_total['n_cls_3_good']:>10} {stats_comb_total['n_cls_3_good']-stats_hough_total['n_cls_3_good']:>+10}")
     print("="*70)
         #print(f"Event {evt}: m1 tracks = {len(tracks_m1)}, {tracks_m1} - m2 tracks = {len(tracks_m2)}, {tracks_m2}")
             
@@ -755,15 +755,15 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
     
     # separe methods 
     # if method == "both" -> execute both m1 and m2 
-    if(method == "both"):
-        if(debug_all):
-            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_all.txt")
-        else: 
-            txt_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2_diff.txt")
-        root_output = os.path.join(output_dir, f"{base}_selected_m1_vs_m2.root")
-    else:
-        txt_output = os.path.join(output_dir, f"{base}_selected{method}.txt")
-        root_output = os.path.join(output_dir, f"{base}_selected{method}.root")
+    #if(method == "both"):
+    if(debug_all):
+        txt_output = os.path.join(output_dir, f"{base}_selected_tracks_all.txt")
+    else: 
+        txt_output = os.path.join(output_dir, f"{base}_selected_tracks_diff.txt")
+    root_output = os.path.join(output_dir, f"{base}_selected_tracks.root")
+    #else:
+    #    txt_output = os.path.join(output_dir, f"{base}_selected{method}.txt")
+    #    root_output = os.path.join(output_dir, f"{base}_selected{method}.root")
 
     root_file = ROOT.TFile(root_output, "RECREATE")
     root_file.cd()
@@ -794,14 +794,14 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
             15.5,
         )
 
-        counters_m1 = {"bad_meanx": 0, "no_TR_hit": 0, "same_z_tracks": 0}
-        all_tracks_m1 = []
+        counters_hough = {"bad_meanx": 0, "no_TR_hit": 0, "same_z_tracks": 0}
+        all_tracks_hough = []
 
         for i, rslt in enumerate(results):
-            for tr in rslt["m1"]:
+            for tr in rslt["hough"]:
                 tr.event = i # add event index to track object
-            remove_duplicate_tracks(rslt["m1"], event_idx=i)
-            all_tracks_m1.extend(rslt["m1"])
+            remove_duplicate_tracks(rslt["hough"], event_idx=i)
+            all_tracks_hough.extend(rslt["hough"])
 
 
     if(method == "_m2" or method == "both"):
@@ -820,14 +820,14 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
             15.5,
         )
 
-        counters_m2 = {"bad_meanx": 0, "no_TR_hit": 0, "same_z_tracks": 0}
-        all_tracks_m2 = []
+        counters_comb = {"bad_meanx": 0, "no_TR_hit": 0, "same_z_tracks": 0}
+        all_tracks_comb = []
 
         for i, rslt in enumerate(results):
-            for tr in rslt["m2"]:
+            for tr in rslt["comb"]:
                 tr.event = i # add event index to track object
-            remove_duplicate_tracks(rslt["m2"], event_idx=i)
-            all_tracks_m2.extend(rslt["m2"])          
+            remove_duplicate_tracks(rslt["comb"], event_idx=i)
+            all_tracks_comb.extend(rslt["comb"])          
 
     if method == "both":
         compare_txt(
@@ -838,7 +838,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
             h_resx_m1, h_resx_m2,
             h_resy_m1, h_resy_m2,
             h_dsum_vs_ncls_m1, h_dsum_vs_ncls_m2,
-            counters_m1, counters_m2,
+            counters_hough, counters_comb,
             debug_all, 
         )
 
@@ -852,7 +852,8 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         h_resy_m2.Write()
         h_dsum_vs_ncls_m1.Write()
         h_dsum_vs_ncls_m2.Write()
-    
+
+    '''
     elif method == "":
         write_txt_dump(
             txt_output,
@@ -889,6 +890,7 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
         h_resx_m2.Write()
         h_resy_m2.Write()
         h_dsum_vs_ncls_m2.Write()
+    '''
 
 
     # --- Copy MCtruth and radius from input file ---
@@ -924,22 +926,26 @@ def extract_selected_info(input_file, output_dir, save_tree=False, masks_to_appl
     if save_tree:
         create_event_ttree(root_file, results)
         if method == "both":
-            create_ttree(root_file, all_tracks_m1, method="") 
-            create_ttree(root_file, all_tracks_m2, method="_m2")
+            create_ttree(root_file, all_tracks_hough, method="hough") 
+            create_ttree(root_file, all_tracks_comb, method="comb")
+        '''
         elif method == "":
             create_ttree(root_file, all_tracks_m1, method) 
         elif method == "_m2":
             create_ttree(root_file, all_tracks_m2, method)    
+        '''
 
     
     # make summary hist for selected method
     if method == "both":
-        make_summary_hist(all_tracks_m1, root_file, output_dir, base, method="")
-        make_summary_hist(all_tracks_m2, root_file, output_dir, base, method="_m2")
+        make_summary_hist(all_tracks_hough, root_file, output_dir, base, method="_hough")
+        make_summary_hist(all_tracks_comb, root_file, output_dir, base, method="_comb")
+    '''
     elif method == "":
         make_summary_hist(all_tracks_m1, root_file, output_dir, base, method)
     elif method == "_m2":
         make_summary_hist(all_tracks_m2, root_file, output_dir, base, method)
+    '''
     
 
     root_file.Close()
@@ -956,12 +962,14 @@ if __name__ == "__main__":
     parser.add_argument("--input", required=True, help="Input file.")
     parser.add_argument("--output-dir", default="./output", help="Output directory. Default is ./output")
     parser.add_argument("--save-tree", action="store_true", help="Build TTree with tracks info.")
-    parser.add_argument("--debug-all", action="store_true", help="Print all tracks into txt dump. Default: print differences between m1 and m2 methods.")
+    parser.add_argument("--debug-all", action="store_true", help="Print all tracks into txt dump. Default: print differences between Hough and Comb methods.")
     parser.add_argument("--mc",  action="store_true", help="If true, process MC data.")
 
+    '''
     method_group = parser.add_mutually_exclusive_group() # either choose m1 or m2, no argument for both
     method_group.add_argument("--use-m2", action="store_true", help="Check for good tracks using only m2 method (default: use both).")
     method_group.add_argument("--use-m1", action="store_true", help="Check for good tracks using only m1 method (default: use both).")
+    '''
     args = parser.parse_args()
 
     # read masks from config
@@ -971,16 +979,17 @@ if __name__ == "__main__":
     multiplicity_config = config["multiplicity_config"]
 
     # choose applied method
-    if (not args.use_m1) and (not args.use_m2):
-        print("\n --- Running both methods (default option) --- ")
-        extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both", debug_all=args.debug_all, mc_copy=args.mc)
+    #if (not args.use_m1) and (not args.use_m2):
+    print("\n --- Running both methods --- ")
+    extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="both", debug_all=args.debug_all, mc_copy=args.mc)
+    '''
     elif args.use_m1:
         print(f"\n --- Running m1 method ---")
         extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="", debug_all=args.debug_all, mc_copy=args.mc)
     elif args.use_m2:
         print(f"\n --- Running m2 method ---")
         extract_selected_info(args.input, args.output_dir, args.save_tree, masks_to_apply, multiplicity_config, method="_m2", debug_all=args.debug_all, mc_copy=args.mc)
-
+    '''
 
 
     
